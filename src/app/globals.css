@@ -1,26 +1,87 @@
 @import "tailwindcss";
 
+/*
+ * SDC 2026 Brand Guide palette (verified page-by-page against
+ * SDC_Brand_Guide_2026.pdf, section 04 "Color Palette"):
+ *   Primary Blue #1574C4 — CTAs, headlines, links, logo
+ *   Dark Navy   #061D39 — headers, dark backgrounds, anchor color
+ *   Light Blue  #AACEE8 — supporting tints, backgrounds, icons
+ *   Yellow      #FFDE51 — accent, callouts, highlight bars
+ *   Green       #74C415 — success stats, secondary CTAs
+ *   Lime Green  #BEFA4F — vibrant accent, use sparingly
+ *   Gray        #D9D9D9 — dividers, backgrounds, rules
+ *   Black       #231F20 — body text, knockout type
+ * Neutrals below are literal tints/shades of that Gray/Black pair (no
+ * invented hue) — token names kept stable so existing class references
+ * repoint automatically.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f7f7f7;
+  --foreground: #231f20;
+  --sdc-blue: #1574c4;
+  --sdc-blue-dark: #0f5a95;
+  --sdc-blue-light: #e6f0fa;
+  --sdc-blue-100: #aacee8;
+  --sdc-navy: #061d39;
+  --sdc-lime: #befa4f;
+  --sdc-border: #d9d9d9;
+  --sdc-border-soft: #ececec;
+  --sdc-yellow: #ffde51;
+  --sdc-yellow-bg: #fff6d6;
+  --sdc-yellow-text: #7a5c00;
+  --sdc-green: #74c415;
+  --sdc-green-bg: #eef7de;
+  --sdc-green-text: #4a7d0d;
+  --sdc-gray-50: #fafafa;
+  --sdc-gray-100: #f2f2f2;
+  --sdc-gray-400: #8c8c8c;
+  --sdc-gray-600: #666666;
+  --sdc-gray-700: #4d4d4d;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  --color-sdc-blue: var(--sdc-blue);
+  --color-sdc-blue-dark: var(--sdc-blue-dark);
+  --color-sdc-blue-light: var(--sdc-blue-light);
+  --color-sdc-blue-100: var(--sdc-blue-100);
+  --color-sdc-navy: var(--sdc-navy);
+  --color-sdc-lime: var(--sdc-lime);
+  --color-sdc-border: var(--sdc-border);
+  --color-sdc-border-soft: var(--sdc-border-soft);
+  --color-sdc-yellow: var(--sdc-yellow);
+  --color-sdc-yellow-bg: var(--sdc-yellow-bg);
+  --color-sdc-yellow-text: var(--sdc-yellow-text);
+  --color-sdc-green: var(--sdc-green);
+  --color-sdc-green-bg: var(--sdc-green-bg);
+  --color-sdc-green-text: var(--sdc-green-text);
+  --color-sdc-gray-50: var(--sdc-gray-50);
+  --color-sdc-gray-100: var(--sdc-gray-100);
+  --color-sdc-gray-400: var(--sdc-gray-400);
+  --color-sdc-gray-600: var(--sdc-gray-600);
+  --color-sdc-gray-700: var(--sdc-gray-700);
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /* System-native body/mono stacks — crisper and instant-loading versus a
+     generic downloaded webapp font. Montserrat stays for headings only,
+     since that's the brand guide's actual requirement. */
+  --font-sans: -apple-system, "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "SF Mono", "Cascadia Code", "Segoe UI Mono", Consolas, monospace;
+  --font-heading: var(--font-montserrat);
+
+  /* Softer elevation instead of Tailwind's default flat black shadows,
+     tinted with the brand's own Dark Navy (#061D39 = rgb(6 29 57)) rather
+     than an arbitrary hue. Same shadow-sm/md/lg/xl scale used throughout
+     the app, so redefining it here reaches every card/button/input without
+     touching each file individually. */
+  --shadow-sm: 0 1px 2px 0 rgb(6 29 57 / 0.06), 0 1px 1px -1px rgb(6 29 57 / 0.05);
+  --shadow-md: 0 4px 10px -2px rgb(6 29 57 / 0.1), 0 2px 4px -2px rgb(6 29 57 / 0.06);
+  --shadow-lg: 0 12px 24px -6px rgb(6 29 57 / 0.14), 0 4px 8px -4px rgb(6 29 57 / 0.08);
+  --shadow-xl: 0 24px 48px -12px rgb(6 29 57 / 0.22), 0 8px 16px -8px rgb(6 29 57 / 0.1);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
 }

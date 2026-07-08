@@ -1,0 +1,300 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  MANAGER
+  ADMIN
+}
+
+// Auth: credentials (email/password) for now — swap for Microsoft/Azure AD SSO
+// later without changing downstream models (User.id is what everything else keys off).
+model User {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         Role     @default(MANAGER)
+  createdAt    DateTime @default(now())
+
+  etcEntries EtcEntry[]
+  executionRateEdits     ExecutionRate[]
+  standardFeeSnapshots   StandardFeeSnapshot[]
+  standardSheetSnapshots StandardSheetSnapshot[]
+}
+
+// Synced from Paylocity (Phase 2). Manually maintained for now.
+// Soft-deleted (active=false) instead of removed, so historical hours stay valid.
+model Employee {
+  id           Int      @id @default(autoincrement())
+  paylocityId  String?  @unique
+  name         String
+  department   String?
+  billingGroup String? // e.g. Engineering / Shop
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  actualHours ActualHours[]
+}
+
+// Source of jobs: manual entry for now (Phase 1).
+// `source` flag lets us add automated sync later without a schema change.
+model Job {
+  id                    Int       @id @default(autoincrement())
+  jobId                 String    @unique // matches existing Job Id, e.g. "1079"
+  jobName               String
+  status                String    @default("Active")
+  customer              String? // confirmed from Project Planner Data Control.xlsx archive tabs
+  type                  String? // e.g. "Custom" | "Duplicate" | "Hybrid" | "Service" — same source
+  poStartDate           DateTime?
+  startDate             DateTime? // confirmed from "Estimated Hours" tab — distinct from poStartDate
+  completeDate          DateTime?
+  includeInTypeCalc     Boolean   @default(false)
+  costQuoted            Decimal?  @db.Decimal(12, 2)
+  costActualHistorical  Decimal?  @db.Decimal(12, 2)
+  // Live from TotalETO (vwProjectActualsVSEstimates) via manual sync button.
+  totEtoEstEngHours     Decimal?  @db.Decimal(10, 2)
+  totEtoActEngHours     Decimal?  @db.Decimal(10, 2)
+  totEtoEstMfgHours     Decimal?  @db.Decimal(10, 2)
+  totEtoActMfgHours     Decimal?  @db.Decimal(10, 2)
+  totEtoSyncedAt        DateTime?
+  source                String    @default("manual") // 'manual' | 'scheduler_sync' | 'totaleto_sync'
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  etcEntries          EtcEntry[]
+  estimatedHours      EstimatedHours[]
+  actualHours         ActualHours[]
+  tasks               JobTask[]
+  monthlyActualHours  JobMonthlyActualHours[]
+  executionRate       ExecutionRate?
+  feeAllotments       FeeAllotment[]
+  standardSheetSnapshots StandardSheetSnapshot[]
+}
+
+// Job-level actual hours worked per month, live from Power BI's "Hours
+// Actual, Est to Date" measure — the same one the legacy "Monthly ETC
+// Process" sheet's PivotTable used, scoped by the model's own
+// Date[Is ETC to Date] cutoff (see sync-powerbi.ts).
+model JobMonthlyActualHours {
+  id             Int      @id @default(autoincrement())
+  jobId          Int
+  job            Job      @relation(fields: [jobId], references: [id])
+  month          String // "2025-01"
+  actualHours    Decimal  @db.Decimal(10, 2)
+  source         String   @default("power_bi")
+  syncedAt       DateTime @default(now())
+  // Manual correction, mirroring the legacy spreadsheet's "Actual Hours
+  // Override" tab (e.g. Paylocity coded hours to "Not Defined" instead of
+  // the real job). While true, syncActualHoursFromPowerBi() skips this row
+  // instead of overwriting the correction on the next sync.
+  overridden     Boolean   @default(false)
+  overriddenNote String?
+  overriddenAt   DateTime?
+
+  @@unique([jobId, month])
+}
+
+// How current the underlying Power BI feed itself is, distinct from
+// syncedAt (which only says when the app last asked). Populated from the
+// model's own [Hours Refreshed Thru] measure whenever an actual-hours sync
+// runs — not queried on every page load, since it only changes when
+// Paylocity's export into the model advances.
+model PowerBiFreshness {
+  id               Int      @id @default(autoincrement())
+  source           String   @unique // e.g. "hours_actual"
+  refreshedThrough DateTime
+  checkedAt        DateTime @default(now())
+}
+
+// Per-job, per-section-code hours across three snapshots, confirmed from the
+// "Estimated Hours" tab: Quoted (original bid), Actual Hours Historical
+// (cumulative actuals as of a cutoff date), and Estimate to Complete.
+model EstimatedHours {
+  id                       Int      @id @default(autoincrement())
+  jobId                    Int
+  job                      Job      @relation(fields: [jobId], references: [id])
+  section                  String // e.g. "10-111"
+  quotedHours              Decimal  @db.Decimal(10, 2) @default(0)
+  actualHistoricalHours    Decimal  @db.Decimal(10, 2) @default(0)
+  estimateToCompleteHours  Decimal  @db.Decimal(10, 2) @default(0)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  @@unique([jobId, section])
+}
+
+// Per-employee task assignment within a job, confirmed from the "ME Name" /
+// "ME Estimate to Complete" columns — free-text task names (e.g. "Frame Assy",
+// "Main Robot"), not fixed section codes, so modeled as job + slot (1-11) + task.
+model JobTask {
+  id                      Int      @id @default(autoincrement())
+  jobId                   Int
+  job                     Job      @relation(fields: [jobId], references: [id])
+  slot                    Int // 1-11, matches column position in the sheet
+  taskName                String
+  estimateToCompleteHours Decimal  @db.Decimal(10, 2)
+  createdAt               DateTime @default(now())
+
+  @@unique([jobId, slot])
+}
+
+// Monthly manager-submitted ETC entries. Append-only + audited.
+// Replaces "Managers Fill Out" tab.
+model EtcEntry {
+  id            Int       @id @default(autoincrement())
+  jobId         Int
+  job           Job       @relation(fields: [jobId], references: [id])
+  section       String
+  month         String // "2026-07"
+  priorEtc      Decimal   @db.Decimal(10, 2)
+  hoursWorked   Decimal   @db.Decimal(10, 2) @default(0)
+  hoursLeftCalc Decimal   @db.Decimal(10, 2) // system-suggested (priorEtc - hoursWorked)
+  newEtc        Decimal   @db.Decimal(10, 2) // manager-confirmed value
+  needsReview   Boolean   @default(true) // replaces cell highlighting
+  enteredById   Int?
+  enteredBy     User?     @relation(fields: [enteredById], references: [id])
+  submittedAt   DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@unique([jobId, section, month])
+}
+
+// Worked hours per employee/job/month. Source stubbed as manual for now;
+// swap to 'paylocity_report' or 'paylocity_api' later without touching downstream logic.
+model ActualHours {
+  id         Int      @id @default(autoincrement())
+  employeeId Int
+  employee   Employee @relation(fields: [employeeId], references: [id])
+  jobId      Int
+  job        Job      @relation(fields: [jobId], references: [id])
+  section    String
+  month      String
+  hours      Decimal  @db.Decimal(10, 2)
+  source     String   @default("manual_entry") // 'manual_entry' | 'paylocity_report' | 'paylocity_api'
+  importedAt DateTime @default(now())
+
+  @@unique([employeeId, jobId, section, month])
+}
+
+// --- Standard Sheet (ported from the sdc-standard-fees app into a
+// password-gated tab here) ---------------------------------------------
+// Reuses this app's existing Job model instead of a second copy, since the
+// jobId here already matches the shared Job Id used everywhere else.
+
+// Per-job execution rates (confirmed from the "Execution Rates" table in
+// Standard Fees.xlsx — NOT a single global constant; each job can override).
+model ExecutionRate {
+  id                Int      @id @default(autoincrement())
+  jobId             Int      @unique
+  job               Job      @relation(fields: [jobId], references: [id])
+  engrRate          Decimal  @db.Decimal(10, 2) @default(170)
+  shopRate          Decimal  @db.Decimal(10, 2) @default(140)
+  partsMarkup       Decimal  @db.Decimal(10, 4) @default(1.2)
+  // Per-job "Contingency" dollar amount — manually entered, matches the
+  // sheet's mostly-blank R column. Multiplied by the global contingency
+  // rate (StandardSheetSetting.contingencyRate) when rolling up Total Standard Fees.
+  contingencyAmount Decimal  @db.Decimal(12, 2) @default(0)
+  notes             String?
+  updatedById       Int?
+  updatedBy         User?    @relation(fields: [updatedById], references: [id])
+  updatedAt         DateTime @updatedAt
+}
+
+// Singleton row for the sheet's single global "Contingency" multiplier
+// (cell R8, applied to every job's contingency amount) — not per-job.
+model StandardSheetSetting {
+  id              Int     @id @default(1)
+  contingencyRate Decimal @db.Decimal(6, 2) @default(1.2)
+}
+
+// Frozen per-job, per-month record of the Standard Sheet — the app's version
+// of the workbook's archive tabs. Live months compute on the fly; submitting
+// a month writes these rows atomically, and that month is then always
+// rendered from here (immune to later rate/ETC edits).
+model StandardSheetSnapshot {
+  id                     Int      @id @default(autoincrement())
+  jobId                  Int
+  job                    Job      @relation(fields: [jobId], references: [id])
+  month                  String // "2026-06"
+  engrRate               Decimal  @db.Decimal(10, 2)
+  shopRate               Decimal  @db.Decimal(10, 2)
+  partsMarkup            Decimal  @db.Decimal(10, 4)
+  etcEngineering         Decimal  @db.Decimal(12, 2)
+  etcShop                Decimal  @db.Decimal(12, 2)
+  etcParts               Decimal  @db.Decimal(12, 2)
+  totalEtcDollars        Decimal  @db.Decimal(14, 2)
+  percentOfTotal         Decimal  @db.Decimal(9, 6)
+  standardFeeEngineering Decimal  @db.Decimal(14, 2)
+  standardFeeShop        Decimal  @db.Decimal(14, 2)
+  contingencyAmount      Decimal  @db.Decimal(12, 2)
+  contingencyRate        Decimal  @db.Decimal(6, 2)
+  totalStandardFees      Decimal  @db.Decimal(14, 2)
+  notes                  String?
+  submittedById          Int?
+  submittedBy            User?    @relation(fields: [submittedById], references: [id])
+  submittedAt            DateTime @default(now())
+
+  @@unique([jobId, month])
+  @@index([month])
+}
+
+enum FeeCategory {
+  ENGINEERING_PM
+  ENGINEERING_WARRANTY
+  SHOP_MANUFACTURING
+  SHOP_WARRANTY
+}
+
+// Standard fee hour allotments per job, per category.
+model FeeAllotment {
+  id        Int         @id @default(autoincrement())
+  jobId     Int
+  job       Job         @relation(fields: [jobId], references: [id])
+  category  FeeCategory
+  hours     Decimal     @db.Decimal(10, 2)
+  month     String // "2026-07" — month the allotment was added/sold
+  source    String      @default("manual") // 'manual' | 'planner_sync'
+  createdAt DateTime    @default(now())
+
+  @@unique([jobId, category, month])
+}
+
+// Company-wide monthly hour pool per category, confirmed from the "Standard Fees By
+// Department" section of Standard Fees.xlsx — not per-job, a single rolling pool per category.
+model CategoryPool {
+  id                       Int         @id @default(autoincrement())
+  category                 FeeCategory
+  month                    String
+  previousMonthPulledHours Decimal     @db.Decimal(10, 2)
+  newHoursAddedThisMonth   Decimal     @db.Decimal(10, 2)
+  hoursAvailable           Decimal     @db.Decimal(10, 2)
+  hoursWorkedThisMonth     Decimal     @db.Decimal(10, 2)
+  hoursPulledThisMonth     Decimal     @db.Decimal(10, 2)
+  newEtcHours              Decimal     @db.Decimal(10, 2)
+  rate                     Decimal     @db.Decimal(10, 2)
+  standardFee              Decimal     @db.Decimal(12, 2)
+  source                   String      @default("manual") // 'manual' | 'migration'
+  createdAt                DateTime    @default(now())
+
+  @@unique([category, month])
+}
+
+// Monthly snapshot, replaces the "Submit All ETC and Standard Fees" script chain.
+// Written as a single DB transaction instead of fragile Excel macros.
+model StandardFeeSnapshot {
+  id            Int      @id @default(autoincrement())
+  month         String   @unique // "2026-07"
+  submittedById Int?
+  submittedBy   User?    @relation(fields: [submittedById], references: [id])
+  submittedAt   DateTime @default(now())
+  totalEngr     Decimal  @db.Decimal(12, 2)
+  totalShop     Decimal  @db.Decimal(12, 2)
+  totalParts    Decimal  @db.Decimal(12, 2)
+}

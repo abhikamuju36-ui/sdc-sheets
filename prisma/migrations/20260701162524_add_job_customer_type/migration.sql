@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE `job` ADD COLUMN `customer` VARCHAR(191) NULL,
+    ADD COLUMN `type` VARCHAR(191) NULL;
