@@ -515,128 +515,6 @@ export default async function StandardSheetPage({
         )}
       </div>
 
-      {/* "Standard Fees By Department" — sheet rows 71-108. Prev Pulled / New Added /
-          Hours Worked come from Power BI (Refresh Pools); Pulled and Rate are the
-          sheet's manual yellow cells; the rest are derived exactly like the sheet. */}
-      <div className="mb-6">
-        <h2 className="mb-2 font-heading text-base font-semibold tracking-tight text-sdc-navy">
-          Standard Fees By Department — {month}
-        </h2>
-        <form action={savePools.bind(null, month)}>
-          <div className="overflow-x-auto border border-sdc-border bg-white shadow-sm">
-            <table className={`text-sm ${TABLE_GRID}`}>
-              <thead>
-                <tr className={TABLE_HEADER_ROW}>
-                  <th className="px-3 py-2">Billing Group</th>
-                  <th className="px-3 py-2">Department</th>
-                  <th className="border-l border-sdc-border px-3 py-2 text-right">Previous Month Pulled Hours</th>
-                  <th className="px-3 py-2 text-right">New Hours Added this Month</th>
-                  <th className="px-3 py-2 text-right">Hours Available</th>
-                  <th className="px-3 py-2 text-right">Hours Worked this Month</th>
-                  <th className="bg-sdc-yellow-bg px-3 py-2 text-right">Hours being pulled this month</th>
-                  <th className="px-3 py-2 text-right">New ETC Hours</th>
-                  <th className="bg-sdc-yellow-bg px-3 py-2 text-right">Rate</th>
-                  <th className="border-l border-sdc-border px-3 py-2 text-right">Standard Fee</th>
-                </tr>
-              </thead>
-              <tbody>
-                {POOL_ROWS.map(({ category, group, dept, hint }, i) => {
-                  const pool = poolByCategory.get(category);
-                  const groupBg = group === "Engineering" ? "bg-[#D9E7F5]" : "bg-[#FBE2D5]";
-                  const zebra = i % 2 === 1 ? "bg-sdc-gray-50/60" : "";
-                  if (!pool) {
-                    return (
-                      <tr key={category} className={zebra}>
-                        <td className={`px-3 py-2 font-medium text-sdc-navy ${groupBg}`}>{group}</td>
-                        <td className="px-3 py-2 text-sdc-gray-700">{dept}</td>
-                        <td colSpan={8} className="px-3 py-2 text-sdc-gray-400">
-                          No pool data for {month} — use &quot;Refresh Pools (Power BI)&quot;.
-                        </td>
-                      </tr>
-                    );
-                  }
-                  const available = Number(pool.hoursAvailable);
-                  const pulled = Number(pool.hoursPulledThisMonth);
-                  const rate = Number(pool.rate);
-                  const newEtc = available - pulled;
-                  return (
-                    <tr key={category} className={`hover:bg-sdc-blue-light/40 ${zebra}`}>
-                      <td className={`px-3 py-2 font-medium text-sdc-navy ${groupBg}`}>{group}</td>
-                      <td className="px-3 py-2 text-sdc-gray-700">{dept}</td>
-                      <td className="px-3 py-2 text-right text-xs text-sdc-navy">
-                        {Number(pool.previousMonthPulledHours).toLocaleString()}
-                      </td>
-                      <td className="px-3 py-2 text-right text-xs text-sdc-navy">
-                        {Number(pool.newHoursAddedThisMonth).toLocaleString()}
-                      </td>
-                      <td className="px-3 py-2 text-right text-xs font-medium text-sdc-navy">{available.toLocaleString()}</td>
-                      <td className="px-3 py-2 text-right text-xs text-sdc-navy">
-                        {Number(pool.hoursWorkedThisMonth).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                      </td>
-                      <td className="bg-sdc-yellow-bg/60 px-3 py-2 text-right">
-                        {editable ? (
-                          <SelectOnFocusInput
-                            type="number"
-                            step="0.01"
-                            name={`pulled__${category}`}
-                            defaultValue={pulled.toString()}
-                            title={hint}
-                            aria-label={`Hours being pulled this month, ${group} ${dept}`}
-                            className="w-20 [appearance:textfield] border-none bg-transparent px-1.5 py-1 text-right text-xs outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                          />
-                        ) : (
-                          <span className="text-xs text-sdc-gray-500">{pulled.toLocaleString()}</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-right text-xs font-medium text-sdc-navy">{newEtc.toLocaleString()}</td>
-                      <td className="bg-sdc-yellow-bg/60 px-3 py-2 text-right">
-                        {editable ? (
-                          <SelectOnFocusInput
-                            type="number"
-                            step="0.01"
-                            name={`rate__${category}`}
-                            defaultValue={rate.toString()}
-                            aria-label={`Rate, ${group} ${dept}`}
-                            className="w-14 [appearance:textfield] border-none bg-transparent px-1.5 py-1 text-right text-xs outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                          />
-                        ) : (
-                          <span className="text-xs text-sdc-gray-500">{rate.toLocaleString()}</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-right text-xs font-semibold text-sdc-navy">
-                        {currency(Number(pool.standardFee))}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 border-sdc-navy bg-sdc-gray-100 text-xs font-medium">
-                  <td colSpan={9} className="px-3 py-2 text-right">
-                    <span className="mr-6 rounded bg-[#D9E7F5] px-2 py-0.5 text-sdc-navy">
-                      Engineering Total: {currency(engineeringTotal)}
-                    </span>
-                    <span className="rounded bg-[#FBE2D5] px-2 py-0.5 text-sdc-navy">
-                      Shop Total: {currency(shopTotal)}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 text-right font-semibold text-sdc-navy">
-                    {currency(engineeringTotal + shopTotal)}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-          {editable && pools.length > 0 && (
-            <div className="mt-2">
-              <button type="submit" className={BUTTON_SECONDARY}>
-                Save Pools
-              </button>
-            </div>
-          )}
-        </form>
-      </div>
-
       <form action={saveRates}>
         <div className="overflow-x-auto border border-sdc-border bg-white shadow-sm">
           <table className={`text-sm ${TABLE_GRID}`}>
@@ -803,6 +681,128 @@ export default async function StandardSheetPage({
           </div>
         )}
       </form>
+
+      {/* "Standard Fees By Department" — sheet rows 71-108. Prev Pulled / New Added /
+          Hours Worked come from Power BI (Refresh Pools); Pulled and Rate are the
+          sheet's manual yellow cells; the rest are derived exactly like the sheet. */}
+      <div className="mb-6">
+        <h2 className="mb-2 font-heading text-base font-semibold tracking-tight text-sdc-navy">
+          Standard Fees By Department — {month}
+        </h2>
+        <form action={savePools.bind(null, month)}>
+          <div className="overflow-x-auto border border-sdc-border bg-white shadow-sm">
+            <table className={`text-sm ${TABLE_GRID}`}>
+              <thead>
+                <tr className={TABLE_HEADER_ROW}>
+                  <th className="px-3 py-2">Billing Group</th>
+                  <th className="px-3 py-2">Department</th>
+                  <th className="border-l border-sdc-border px-3 py-2 text-right">Previous Month Pulled Hours</th>
+                  <th className="px-3 py-2 text-right">New Hours Added this Month</th>
+                  <th className="px-3 py-2 text-right">Hours Available</th>
+                  <th className="px-3 py-2 text-right">Hours Worked this Month</th>
+                  <th className="bg-sdc-yellow-bg px-3 py-2 text-right">Hours being pulled this month</th>
+                  <th className="px-3 py-2 text-right">New ETC Hours</th>
+                  <th className="bg-sdc-yellow-bg px-3 py-2 text-right">Rate</th>
+                  <th className="border-l border-sdc-border px-3 py-2 text-right">Standard Fee</th>
+                </tr>
+              </thead>
+              <tbody>
+                {POOL_ROWS.map(({ category, group, dept, hint }, i) => {
+                  const pool = poolByCategory.get(category);
+                  const groupBg = group === "Engineering" ? "bg-[#D9E7F5]" : "bg-[#FBE2D5]";
+                  const zebra = i % 2 === 1 ? "bg-sdc-gray-50/60" : "";
+                  if (!pool) {
+                    return (
+                      <tr key={category} className={zebra}>
+                        <td className={`px-3 py-2 font-medium text-sdc-navy ${groupBg}`}>{group}</td>
+                        <td className="px-3 py-2 text-sdc-gray-700">{dept}</td>
+                        <td colSpan={8} className="px-3 py-2 text-sdc-gray-400">
+                          No pool data for {month} — use &quot;Refresh Pools (Power BI)&quot;.
+                        </td>
+                      </tr>
+                    );
+                  }
+                  const available = Number(pool.hoursAvailable);
+                  const pulled = Number(pool.hoursPulledThisMonth);
+                  const rate = Number(pool.rate);
+                  const newEtc = available - pulled;
+                  return (
+                    <tr key={category} className={`hover:bg-sdc-blue-light/40 ${zebra}`}>
+                      <td className={`px-3 py-2 font-medium text-sdc-navy ${groupBg}`}>{group}</td>
+                      <td className="px-3 py-2 text-sdc-gray-700">{dept}</td>
+                      <td className="px-3 py-2 text-right text-xs text-sdc-navy">
+                        {Number(pool.previousMonthPulledHours).toLocaleString()}
+                      </td>
+                      <td className="px-3 py-2 text-right text-xs text-sdc-navy">
+                        {Number(pool.newHoursAddedThisMonth).toLocaleString()}
+                      </td>
+                      <td className="px-3 py-2 text-right text-xs font-medium text-sdc-navy">{available.toLocaleString()}</td>
+                      <td className="px-3 py-2 text-right text-xs text-sdc-navy">
+                        {Number(pool.hoursWorkedThisMonth).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      </td>
+                      <td className="bg-sdc-yellow-bg/60 px-3 py-2 text-right">
+                        {editable ? (
+                          <SelectOnFocusInput
+                            type="number"
+                            step="0.01"
+                            name={`pulled__${category}`}
+                            defaultValue={pulled.toString()}
+                            title={hint}
+                            aria-label={`Hours being pulled this month, ${group} ${dept}`}
+                            className="w-20 [appearance:textfield] border-none bg-transparent px-1.5 py-1 text-right text-xs outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                          />
+                        ) : (
+                          <span className="text-xs text-sdc-gray-500">{pulled.toLocaleString()}</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right text-xs font-medium text-sdc-navy">{newEtc.toLocaleString()}</td>
+                      <td className="bg-sdc-yellow-bg/60 px-3 py-2 text-right">
+                        {editable ? (
+                          <SelectOnFocusInput
+                            type="number"
+                            step="0.01"
+                            name={`rate__${category}`}
+                            defaultValue={rate.toString()}
+                            aria-label={`Rate, ${group} ${dept}`}
+                            className="w-14 [appearance:textfield] border-none bg-transparent px-1.5 py-1 text-right text-xs outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                          />
+                        ) : (
+                          <span className="text-xs text-sdc-gray-500">{rate.toLocaleString()}</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right text-xs font-semibold text-sdc-navy">
+                        {currency(Number(pool.standardFee))}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-sdc-navy bg-sdc-gray-100 text-xs font-medium">
+                  <td colSpan={9} className="px-3 py-2 text-right">
+                    <span className="mr-6 rounded bg-[#D9E7F5] px-2 py-0.5 text-sdc-navy">
+                      Engineering Total: {currency(engineeringTotal)}
+                    </span>
+                    <span className="rounded bg-[#FBE2D5] px-2 py-0.5 text-sdc-navy">
+                      Shop Total: {currency(shopTotal)}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-right font-semibold text-sdc-navy">
+                    {currency(engineeringTotal + shopTotal)}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          {editable && pools.length > 0 && (
+            <div className="mt-2">
+              <button type="submit" className={BUTTON_SECONDARY}>
+                Save Pools
+              </button>
+            </div>
+          )}
+        </form>
+      </div>
     </div>
   );
 }
