@@ -15,8 +15,8 @@ import { logAudit } from "@/lib/audit";
 import type { Prisma } from "@prisma/client";
 import { BUTTON_PRIMARY, BUTTON_SECONDARY, TABLE_HEADER_ROW, TABLE_GRID } from "@/components/ui/classnames";
 import { StatusBadge } from "@/components/ui/StatusBadge";
-import { PillLinks } from "@/components/ui/PillLinks";
 import { SelectOnFocusInput } from "@/components/SelectOnFocusInput";
+import { MonthSelect } from "@/components/MonthSelect";
 
 const RATE_INPUT_CLASS =
   "w-16 [appearance:textfield] border-none bg-transparent px-1.5 py-1 text-right text-xs outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none disabled:text-sdc-gray-400";
@@ -435,21 +435,16 @@ export default async function StandardSheetPage({
         Submitting a month freezes it, like the old archive tabs.
       </p>
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      <div className="mb-6 flex flex-wrap items-center gap-3">
         <span className="text-xs font-medium text-sdc-gray-500">Month:</span>
-        {allMonths.length === 0 && <span className="text-xs text-sdc-gray-400">no ETC history yet</span>}
-        <PillLinks
-          items={allMonths.map((m) => ({
-            key: m,
-            label: submittedMonths.has(m) ? `${m} ✓` : m,
-            href: `/standard-sheet?month=${m}`,
-            active: m === month,
-          }))}
+        <MonthSelect
+          months={allMonths}
+          current={month}
+          basePath="/standard-sheet"
+          lockedMonths={[...submittedMonths]}
+          inProgressSuffix=""
         />
-        {!allMonths.includes(month) && <StatusBadge variant="active">{month} (current, no entries)</StatusBadge>}
-      </div>
 
-      <div className="mb-4 flex flex-wrap items-center gap-3">
         <StatusBadge variant={isSubmitted ? "locked" : "needsReview"}>
           {isSubmitted ? "Submitted (frozen)" : "Live — not submitted"}
         </StatusBadge>
@@ -473,9 +468,7 @@ export default async function StandardSheetPage({
             </button>
           </form>
         )}
-      </div>
 
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <form className="flex gap-2 rounded-xl border border-sdc-border bg-white p-3 shadow-sm">
           <input type="hidden" name="month" value={month} />
           <input
