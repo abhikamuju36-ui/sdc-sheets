@@ -5,7 +5,9 @@ import { notFound } from "next/navigation";
 import { PageTitle, SectionTitle } from "@/components/ui/Typography";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { PillLinks } from "@/components/ui/PillLinks";
-import { card, INPUT, BUTTON_PRIMARY, TABLE_HEADER_ROW } from "@/components/ui/classnames";
+import { card, INPUT, BUTTON_PRIMARY, BUTTON_SECONDARY, LABEL, TABLE_HEADER_ROW } from "@/components/ui/classnames";
+import { saveJobTask, deleteJobTask } from "@/lib/jobtask-actions";
+import { Fragment } from "react";
 
 const TABS = [
   { key: "etc", label: "ETC & Sections" },
@@ -410,29 +412,91 @@ export default async function JobDetailPage({
 
       {tab === "assign" && (
         <>
-          <p className="mb-2 text-xs text-sdc-gray-400">Per-employee task breakdown from the &quot;ME Name&quot; columns.</p>
-          {tasks.length > 0 ? (
-            <div className={`${card("p-0")} overflow-hidden`}>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className={TABLE_HEADER_ROW}>
-                    <th className="px-4 py-3">Task</th>
-                    <th className="px-4 py-3">Estimate to Complete (hrs)</th>
+          <p className="mb-2 text-xs text-sdc-gray-400">
+            Per-employee task breakdown from the &quot;ME Name&quot; columns — editable here, replacing the Project
+            Planner workbook.
+          </p>
+          <div className={`${card("p-0")} overflow-hidden`}>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className={TABLE_HEADER_ROW}>
+                  <th className="px-4 py-3">Task / Person</th>
+                  <th className="px-4 py-3">Estimate to Complete (hrs)</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-sdc-border-soft">
+                {tasks.map((t) => (
+                  <tr key={t.id}>
+                    <td className="px-4 py-2">
+                      <input
+                        name="taskName"
+                        defaultValue={t.taskName}
+                        required
+                        form={`task-${t.id}`}
+                        className={`${INPUT} w-full px-2 py-1 text-xs font-medium`}
+                        aria-label={`Task name, slot ${t.slot}`}
+                      />
+                    </td>
+                    <td className="px-4 py-2">
+                      <input
+                        name="hours"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        defaultValue={t.estimateToCompleteHours.toString()}
+                        form={`task-${t.id}`}
+                        className={`${INPUT} w-28 px-2 py-1 text-right text-xs`}
+                        aria-label={`Hours, slot ${t.slot}`}
+                      />
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      <div className="flex justify-end gap-2">
+                        <button type="submit" form={`task-${t.id}`} className={`${BUTTON_SECONDARY} px-2.5 py-1 text-xs`}>
+                          Save
+                        </button>
+                        <button type="submit" form={`task-del-${t.id}`} className={`${BUTTON_SECONDARY} px-2.5 py-1 text-xs text-red-700`}>
+                          Delete
+                        </button>
+                      </div>
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-sdc-border-soft">
-                  {tasks.map((t) => (
-                    <tr key={t.id}>
-                      <td className="px-4 py-2 font-medium text-sdc-navy">{t.taskName}</td>
-                      <td className="px-4 py-2">{t.estimateToCompleteHours.toString()}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                ))}
+                {tasks.length === 0 && (
+                  <tr>
+                    <td colSpan={3} className="px-4 py-5 text-sdc-gray-400">
+                      No task assignments for this job yet — add one below.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Row edit forms live outside the table (HTML forbids <form> in <tr>). */}
+          {tasks.map((t) => (
+            <Fragment key={t.id}>
+              <form id={`task-${t.id}`} action={saveJobTask.bind(null, jobId, t.slot)} />
+              <form id={`task-del-${t.id}`} action={deleteJobTask.bind(null, t.id)} />
+            </Fragment>
+          ))}
+
+          <form action={saveJobTask.bind(null, jobId, null)} className={`${card()} mt-4`}>
+            <p className="mb-3 text-sm font-semibold text-sdc-navy">Add task assignment</p>
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="flex flex-col gap-1">
+                <span className={LABEL}>Task / Person *</span>
+                <input name="taskName" required className={INPUT} placeholder="e.g. J. Smith — panel layout" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className={LABEL}>Estimate to Complete (hrs)</span>
+                <input name="hours" type="number" step="0.01" min="0" defaultValue="0" className={INPUT} />
+              </label>
+              <button type="submit" className={BUTTON_PRIMARY}>
+                Add
+              </button>
             </div>
-          ) : (
-            <p className="text-sm text-sdc-gray-400">No task assignments for this job.</p>
-          )}
+          </form>
         </>
       )}
     </div>

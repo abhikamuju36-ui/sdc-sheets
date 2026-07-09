@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
 import { NextRequest } from "next/server";
-import { validJobTypeFilter } from "@/lib/job-filters";
+import { validJobTypeFilter, compareJobIds } from "@/lib/job-filters";
 
 function csvEscape(value: unknown): string {
   const s = String(value ?? "");
@@ -17,7 +17,8 @@ export async function GET(req: NextRequest) {
   if (q) where.OR = [{ jobName: { contains: q } }, { jobId: { contains: q } }];
   if (status) where.status = status;
 
-  const jobs = await prisma.job.findMany({ where, orderBy: { jobId: "asc" } });
+  const jobs = await prisma.job.findMany({ where });
+  jobs.sort((a, b) => compareJobIds(a.jobId, b.jobId)); // numeric, not lexicographic
 
   const header = ["Job Id", "Job Name", "Status", "Customer", "Type", "Source", "PO Start Date"];
   const rows = jobs.map((j) => [

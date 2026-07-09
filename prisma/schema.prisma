@@ -26,6 +26,28 @@ model User {
   executionRateEdits     ExecutionRate[]
   standardFeeSnapshots   StandardFeeSnapshot[]
   standardSheetSnapshots StandardSheetSnapshot[]
+  auditLogs              AuditLog[]
+}
+
+// Append-only record of who changed what, everywhere in the app — ETC edits,
+// employee/job-task changes, Standard Sheet edits, month
+// submit/reopen/refresh, and sign-ins. `userEmail` is a snapshot so a log
+// entry stays readable even if the account's email later changes.
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  userId     Int?
+  user       User?    @relation(fields: [userId], references: [id])
+  userEmail  String?
+  action     String // e.g. "etc.submitMonth", "employee.create"
+  entityType String? // e.g. "EtcEntry", "Employee"
+  entityId   String? // stringified id/key, e.g. "42" or "1079-10-111-2026-07"
+  summary    String // human-readable one-liner shown in the log viewer
+  metadata   Json? // structured before/after values or extra detail
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([createdAt])
 }
 
 // Synced from Paylocity (Phase 2). Manually maintained for now.
@@ -157,6 +179,7 @@ model EtcEntry {
   hoursWorked   Decimal   @db.Decimal(10, 2) @default(0)
   hoursLeftCalc Decimal   @db.Decimal(10, 2) // system-suggested (priorEtc - hoursWorked)
   newEtc        Decimal   @db.Decimal(10, 2) // manager-confirmed value
+  newEtcDraft   Decimal?  @db.Decimal(10, 2) // typed-but-unsubmitted override, autosaved so a Refresh can't wipe it (the sheet preserved typed New ETC cells)
   needsReview   Boolean   @default(true) // replaces cell highlighting
   enteredById   Int?
   enteredBy     User?     @relation(fields: [enteredById], references: [id])

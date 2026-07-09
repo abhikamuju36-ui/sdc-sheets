@@ -9,8 +9,10 @@ export default async function AppGroupLayout({ children }: { children: React.Rea
     await signOut({ redirectTo: "/login" });
   }
 
+  const role = (session?.user as { role?: string } | undefined)?.role;
+
   return (
-    <AppShell userEmail={session?.user?.email} signOutAction={handleSignOut}>
+    <AppShell userEmail={session?.user?.email} role={role} signOutAction={handleSignOut}>
       {children}
     </AppShell>
   );

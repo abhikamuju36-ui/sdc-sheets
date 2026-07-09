@@ -3,16 +3,18 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3010",
+    "dev": "next dev -p 3010 --experimental-https",
     "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
+    "start": "next start -p 3010",
+    "lint": "eslint",
+    "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "@azure/msal-node": "^5.3.1",
     "@azure/msal-node-extensions": "^5.3.1",
     "@prisma/client": "6.19.3",
     "bcryptjs": "^3.0.3",
+    "mssql": "^12.6.0",
     "next": "16.2.9",
     "next-auth": "^5.0.0-beta.31",
     "prisma": "6.19.3",
@@ -29,7 +31,6 @@
     "dotenv": "^17.4.2",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
-    "mssql": "^12.6.0",
     "tailwindcss": "^4",
     "tsx": "^4.22.4",
     "typescript": "^5",

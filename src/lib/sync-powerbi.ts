@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { VALID_JOB_TYPES, validJobTypeFilter } from "@/lib/job-filters";
+import { VALID_JOB_TYPES, etcActiveJobFilter } from "@/lib/job-filters";
 import { runDax } from "@/lib/powerbi-client";
 import { ETC_TRACKED_CODES, PARTS_COST_SECTION } from "@/lib/sections";
 import { calcHoursLeft, round2 } from "@/lib/etc";
@@ -86,8 +86,13 @@ interface HoursWorkedBySectionRow {
 // model can be sliced by 'Function Hierarchy'[Section-Function Code] the
 // same way 'Hours Estimated' already is. Always overwrites on refresh — the
 // manager's "Hours Worked" is meant to always reflect Power BI, not be
-// independently typed in. Only touches entries that already exist (i.e. the
-// month has been started); never creates new EtcEntry rows.
+// independently typed in.
+//
+// When Power BI reports hours in a tracked section the job has no entry for
+// (work charged to a section that was never quoted, so startMonth didn't seed
+// it), the entry is CREATED rather than the hours silently dropped — the
+// sheet's pivot copy showed such hours, and the app must too. Prior ETC for
+// these comes from the previous month's entry if one exists, else 0.
 export async function syncHoursWorkedFromPowerBi(month: string): Promise<{ rowsUpdated: number; rowsSkipped: number }> {
   const [year, monthNum] = month.split("-").map(Number);
   // 'Date' isn't a groupby column here, so the month filter has to be passed
@@ -124,8 +129,38 @@ export async function syncHoursWorkedFromPowerBi(month: string): Promise<{ rowsU
     const entry = await prisma.etcEntry.findUnique({
       where: { jobId_section_month: { jobId: job.id, section, month } },
     });
+
     if (!entry) {
-      rowsSkipped++;
+      // Unquoted-section hours: create the entry so the work is visible, but
+      // only for jobs the grid actually shows, only once the month has been
+      // started, and only when there are real hours to show.
+      const monthStarted = (await prisma.etcEntry.count({ where: { month } })) > 0;
+      const qualifies =
+        job.status === "Active" && job.completeDate === null && VALID_JOB_TYPES.includes(job.type as (typeof VALID_JOB_TYPES)[number]);
+      if (!monthStarted || !qualifies || hours === 0) {
+        rowsSkipped++;
+        continue;
+      }
+
+      const priorEntry = await prisma.etcEntry.findUnique({
+        where: { jobId_section_month: { jobId: job.id, section, month: previousMonth(month) } },
+        select: { newEtc: true },
+      });
+      const priorEtc = priorEntry ? Number(priorEntry.newEtc) : 0;
+
+      await prisma.etcEntry.create({
+        data: {
+          jobId: job.id,
+          section,
+          month,
+          priorEtc,
+          hoursWorked: hours,
+          hoursLeftCalc: round2(calcHoursLeft(priorEtc, hours)),
+          newEtc: priorEtc,
+          needsReview: true,
+        },
+      });
+      rowsUpdated++;
       continue;
     }
 
@@ -190,7 +225,7 @@ export async function syncPartsCostFromPowerBi(month: string): Promise<{ rowsUps
     actualRows.filter((r) => r["Job[Job Id]"] != null).map((r) => [String(Number(r["Job[Job Id]"])), r.PartCostActual ?? 0])
   );
 
-  const jobs = await prisma.job.findMany({ where: { status: "Active", ...validJobTypeFilter }, select: { id: true, jobId: true } });
+  const jobs = await prisma.job.findMany({ where: etcActiveJobFilter, select: { id: true, jobId: true } });
   const jobByJobId = new Map(jobs.map((j) => [j.jobId, j]));
 
   let rowsUpserted = 0;
@@ -251,7 +286,6 @@ function previousMonth(month: string): string {
   const d = new Date(y, m - 2, 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
-
 // Refreshes the company-wide "Standard Fees By Department" category pools,
 // scoped to the ETC period whose Begin Date is the requested month (the
 // sheet's pivot used the 'ETC Period Relative Index = 0' slicer — filtering

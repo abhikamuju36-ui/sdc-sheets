@@ -2,16 +2,57 @@
 
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
-import { calcHoursLeft, suggestNewEtc, isMonthLocked, round2 } from "@/lib/etc";
-import { validJobTypeFilter } from "@/lib/job-filters";
+import { calcHoursLeft, suggestNewEtc, isMonthLocked, round2, prevMonth, nextMonth, isValidMonth } from "@/lib/etc";
+import { etcActiveJobFilter } from "@/lib/job-filters";
 import { syncActualHoursFromPowerBi, syncHoursWorkedFromPowerBi, syncPartsCostFromPowerBi } from "@/lib/sync-powerbi";
-import { ETC_TRACKED_CODES } from "@/lib/sections";
+import { ETC_TRACKED_CODES, PARTS_COST_SECTION } from "@/lib/sections";
 import { revalidatePath } from "next/cache";
+import { logAudit } from "@/lib/audit";
 
-function prevMonth(month: string): string {
-  const [y, m] = month.split("-").map(Number);
-  const d = new Date(y, m - 2, 1); // m is 1-indexed; m-2 lands on the previous month
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+// The sheet physically had one working month; the app must not let an
+// arbitrary past/future month be seeded out of order — Prior ETC carries
+// forward from the previous month's New ETC, so seeding ahead of an
+// unsubmitted month would bake in-flight numbers into history. Re-seeding an
+// already-started month is always fine (that's what Refresh does).
+async function assertMonthSeedable(month: string): Promise<void> {
+  const alreadyStarted = (await prisma.etcEntry.count({ where: { month } })) > 0;
+  if (alreadyStarted) return;
+
+  const latest = await prisma.etcEntry.findFirst({ orderBy: { month: "desc" }, select: { month: true } });
+  if (!latest) return; // very first month ever — anything goes
+
+  const latestEntries = await prisma.etcEntry.findMany({ where: { month: latest.month }, select: { needsReview: true } });
+  if (!isMonthLocked(latestEntries)) {
+    throw new Error(`${latest.month} is still in progress — submit and lock it before starting a new month.`);
+  }
+  const expected = nextMonth(latest.month);
+  if (month !== expected) {
+    throw new Error(`The next ETC month after ${latest.month} is ${expected} — months must be started in order.`);
+  }
+}
+
+// Deletes unsubmitted entries the grid can never render — either the job no
+// longer qualifies (completed, deactivated, or type-invalidated since
+// seeding), or the section isn't one the grid tracks (relics from before the
+// section list matched the real sheet). The app-side equivalent of the
+// sheet's Refresh deleting rows for jobs gone from the source. Confirmed
+// history (needsReview=false) is never pruned.
+async function pruneStaleEntries(month: string): Promise<number> {
+  const qualifying = await prisma.job.findMany({ where: etcActiveJobFilter, select: { id: true } });
+  // Zero qualifying jobs means something is wrong upstream (empty Job table,
+  // broken filter) — `notIn: []` would delete EVERY unsubmitted entry. Bail.
+  if (qualifying.length === 0) return 0;
+  const result = await prisma.etcEntry.deleteMany({
+    where: {
+      month,
+      needsReview: true,
+      OR: [
+        { jobId: { notIn: qualifying.map((j) => j.id) } },
+        { section: { notIn: [...ETC_TRACKED_CODES, PARTS_COST_SECTION] } },
+      ],
+    },
+  });
+  return result.count;
 }
 
 // Seeds one EtcEntry per Active job's EstimatedHours section for `month`, carrying
@@ -24,8 +65,22 @@ function prevMonth(month: string): string {
 // tracks (ETC_SECTIONS) — confirmed by decoding its header formulas; PM,
 // Manufacturing, and the whole Warranty phase have no ETC column there.
 export async function startMonth(month: string, _formData: FormData) {
+  await seedMonth(month);
+  await logAudit({ action: "etc.startMonth", entityType: "EtcMonth", entityId: month, summary: `Started ETC month ${month}` });
+  revalidatePath("/etc");
+}
+
+async function seedMonth(month: string) {
+  if (!isValidMonth(month)) {
+    throw new Error(`"${month}" is not a valid ETC month (expected YYYY-MM).`);
+  }
+  await assertMonthSeedable(month);
+  await pruneStaleEntries(month);
+
+  // Must be the exact filter the grid renders with — a job seeded here but
+  // hidden there leaves entries no form input can ever confirm.
   const jobs = await prisma.job.findMany({
-    where: { status: "Active", ...validJobTypeFilter },
+    where: etcActiveJobFilter,
     include: { estimatedHours: true },
   });
   const jobIds = jobs.map((j) => j.id);
@@ -88,7 +143,25 @@ export async function submitMonth(month: string, formData: FormData) {
   const session = await auth();
   const userId = (session?.user as { id?: string } | undefined)?.id;
 
-  const entries = await prisma.etcEntry.findMany({ where: { month } });
+  // Scope to the same job universe the grid renders — entries on jobs that
+  // stopped qualifying since the last Refresh have no form inputs and must be
+  // pruned (if unsubmitted) rather than fail validation. Confirmed entries on
+  // since-hidden jobs are history and are left untouched.
+  const qualifying = await prisma.job.findMany({ where: etcActiveJobFilter, select: { id: true } });
+  const qualifyingIds = new Set(qualifying.map((j) => j.id));
+  const allEntries = await prisma.etcEntry.findMany({ where: { month } });
+  const renderable = (section: string) => section === PARTS_COST_SECTION || ETC_TRACKED_CODES.has(section);
+  const staleIds = allEntries
+    .filter((e) => e.needsReview && (!qualifyingIds.has(e.jobId) || !renderable(e.section)))
+    .map((e) => e.id);
+  const entries = allEntries.filter((e) => qualifyingIds.has(e.jobId) && renderable(e.section));
+
+  // Never let a submission reduce a month to nothing — an empty confirm with
+  // stale deletions would erase the month instead of locking it.
+  if (entries.length === 0) {
+    throw new Error(`Nothing to submit for ${month} — no entries on currently active jobs.`);
+  }
+
   const updates: { id: number; priorEtc: number; hoursWorked: number; newEtc: number }[] = [];
 
   for (const entry of entries) {
@@ -118,6 +191,9 @@ export async function submitMonth(month: string, formData: FormData) {
 
   await prisma.$transaction(
     async (tx) => {
+      if (staleIds.length > 0) {
+        await tx.etcEntry.deleteMany({ where: { id: { in: staleIds } } });
+      }
       for (const u of updates) {
         await tx.etcEntry.update({
           where: { id: u.id },
@@ -125,6 +201,7 @@ export async function submitMonth(month: string, formData: FormData) {
             hoursWorked: u.hoursWorked,
             hoursLeftCalc: round2(calcHoursLeft(u.priorEtc, u.hoursWorked)),
             newEtc: u.newEtc,
+            newEtcDraft: null, // draft is consumed by the submission
             needsReview: false,
             submittedAt: new Date(),
             ...(userId ? { enteredById: Number(userId) } : {}),
@@ -135,7 +212,52 @@ export async function submitMonth(month: string, formData: FormData) {
     { timeout: 20000 },
   );
 
+  const entryById = new Map(entries.map((e) => [e.id, e]));
+  await logAudit({
+    action: "etc.submitMonth",
+    entityType: "EtcMonth",
+    entityId: month,
+    summary: `Submitted ${updates.length} ETC entr${updates.length === 1 ? "y" : "ies"} for ${month}`,
+    metadata: {
+      staleDeleted: staleIds.length,
+      entries: updates.map((u) => ({
+        jobId: entryById.get(u.id)?.jobId,
+        section: entryById.get(u.id)?.section,
+        priorEtc: u.priorEtc,
+        hoursWorked: u.hoursWorked,
+        newEtc: u.newEtc,
+      })),
+    },
+  });
+
   revalidatePath("/etc");
+}
+
+// Autosaves a typed-but-unsubmitted New ETC override so it survives Refresh
+// Data, navigation, and browser crashes — parity with the sheet, whose Refresh
+// script skipped non-empty New ETC cells. Deliberately does NOT revalidate the
+// page: a re-render mid-typing would steal focus from the manager's next cell.
+export async function saveNewEtcDraft(entryId: number, value: number | null): Promise<void> {
+  if (value !== null && (!Number.isFinite(value) || value < 0)) {
+    throw new Error(`Invalid New ETC draft value "${value}".`);
+  }
+
+  const entry = await prisma.etcEntry.findUnique({ where: { id: entryId }, select: { needsReview: true } });
+  if (!entry) throw new Error(`ETC entry ${entryId} not found.`);
+  if (!entry.needsReview) throw new Error(`Entry ${entryId} is already submitted — reopen the month to change it.`);
+
+  await prisma.etcEntry.update({
+    where: { id: entryId },
+    data: { newEtcDraft: value === null ? null : round2(value) },
+  });
+
+  await logAudit({
+    action: "etc.saveNewEtcDraft",
+    entityType: "EtcEntry",
+    entityId: entryId,
+    summary: `Draft New ETC ${value === null ? "cleared" : `set to ${round2(value)}`} on entry ${entryId}`,
+    metadata: { value },
+  });
 }
 
 // Admin-only: re-opens a locked (fully-submitted) month for editing.
@@ -150,28 +272,43 @@ export async function reopenMonth(month: string, _formData: FormData) {
     await tx.etcEntry.updateMany({ where: { month }, data: { needsReview: true } });
   });
 
+  await logAudit({ action: "etc.reopenMonth", entityType: "EtcMonth", entityId: month, summary: `Reopened ETC month ${month}` });
+
   revalidatePath("/etc");
 }
 
-// Parity with the original sheet's "Refresh Data" button: pulls the latest
-// actual hours from Power BI. Updates the job-level rollup (for the
-// dashboard/job-detail views) AND overwrites this month's EtcEntry.hoursWorked
-// per section directly — Hours Worked is meant to always reflect Power BI,
-// not be independently typed in. Recomputes Hours Left / suggested New ETC
-// from the fresh value, but leaves needsReview untouched so a manager still
-// confirms before it counts as submitted.
+// Parity with the original sheet's "Refresh Data" button, which did everything
+// in one click: added/removed job rows AND pulled the latest hours. So this
+// seeds the month first if needed (seedMonth is idempotent — submitted entries
+// are never touched), then pulls actual hours from Power BI. Updates the
+// job-level rollup (for the dashboard/job-detail views) AND overwrites this
+// month's EtcEntry.hoursWorked per section directly — Hours Worked is meant to
+// always reflect Power BI, not be independently typed in. Recomputes Hours
+// Left / suggested New ETC from the fresh value, but leaves needsReview
+// untouched so a manager still confirms before it counts as submitted.
 export async function syncPowerBiForEtc(month: string, _formData: FormData) {
+  // A submitted month is a frozen snapshot — refresh must never rewrite its
+  // Hours Worked/Parts Cost. Reopen it first if a genuine correction is needed.
+  const entries = await prisma.etcEntry.findMany({ where: { month }, select: { needsReview: true } });
+  if (isMonthLocked(entries)) {
+    throw new Error(`${month} is already submitted and locked — its numbers are frozen. Reopen it first if a correction is needed.`);
+  }
+
+  await seedMonth(month);
   await syncActualHoursFromPowerBi();
   await syncHoursWorkedFromPowerBi(month);
   await syncPartsCostFromPowerBi(month);
+  await logAudit({ action: "etc.syncPowerBiForEtc", entityType: "EtcMonth", entityId: month, summary: `Refreshed Power BI data for ETC month ${month}` });
   revalidatePath("/etc");
   revalidatePath("/");
 }
 
-// Parity with the original sheet's "Clear ETC" button: resets Hours Worked (and the
-// derived New ETC) back to a fresh carry-forward state for every entry in `month`.
-// Refuses to touch a locked (submitted) month — reopen it first if a genuine
-// correction is needed, so a clear can never silently erase confirmed history.
+// Parity with the original sheet's "Clear ETC" script, which blanked only the
+// New ETC columns and left Hours Worked alone: resets every entry's New ETC
+// back to the system suggestion and re-flags it for review, keeping the
+// Power BI-sourced Hours Worked in place. Refuses to touch a locked
+// (submitted) month — reopen it first if a genuine correction is needed, so a
+// clear can never silently erase confirmed history.
 export async function clearMonth(month: string, _formData: FormData) {
   const entries = await prisma.etcEntry.findMany({ where: { month } });
   if (isMonthLocked(entries)) {
@@ -182,14 +319,27 @@ export async function clearMonth(month: string, _formData: FormData) {
     async (tx) => {
       for (const entry of entries) {
         const priorEtc = Number(entry.priorEtc);
+        const hoursWorked = Number(entry.hoursWorked);
         await tx.etcEntry.update({
           where: { id: entry.id },
-          data: { hoursWorked: 0, hoursLeftCalc: priorEtc, newEtc: priorEtc },
+          data: {
+            hoursLeftCalc: round2(calcHoursLeft(priorEtc, hoursWorked)),
+            newEtc: round2(suggestNewEtc(priorEtc, hoursWorked)),
+            newEtcDraft: null, // the sheet's Clear wiped typed New ETC cells too
+            needsReview: true,
+          },
         });
       }
     },
     { timeout: 20000 },
   );
+
+  await logAudit({
+    action: "etc.clearMonth",
+    entityType: "EtcMonth",
+    entityId: month,
+    summary: `Cleared New ETC on ${entries.length} entr${entries.length === 1 ? "y" : "ies"} for ${month}`,
+  });
 
   revalidatePath("/etc");
 }

@@ -130,6 +130,19 @@ const GROUPS: NavGroup[] = [
           </Icon>
         ),
       },
+      {
+        href: "/employees",
+        label: "Employees",
+        isActive: (p) => p === "/employees",
+        icon: (
+          <Icon>
+            <circle cx="6" cy="5.5" r="2.5" />
+            <path d="M1.5 13.5 C1.5 10.5 3.5 9.5 6 9.5 C8.5 9.5 10.5 10.5 10.5 13.5" strokeLinecap="round" />
+            <circle cx="11.5" cy="6" r="2" />
+            <path d="M12 9.5 C13.8 9.8 14.8 11 14.8 13" strokeLinecap="round" />
+          </Icon>
+        ),
+      },
     ],
   },
   {
@@ -172,14 +185,36 @@ const GROUPS: NavGroup[] = [
   },
 ];
 
+const ADMIN_GROUP: NavGroup = {
+  label: "Admin",
+  items: [
+    {
+      href: "/audit-log",
+      label: "Audit Log",
+      isActive: (p) => p === "/audit-log",
+      icon: (
+        <Icon>
+          <rect x="2" y="2" width="12" height="12" rx="1.5" />
+          <line x1="4.5" y1="5.5" x2="11.5" y2="5.5" strokeLinecap="round" />
+          <line x1="4.5" y1="8" x2="11.5" y2="8" strokeLinecap="round" />
+          <line x1="4.5" y1="10.5" x2="8.5" y2="10.5" strokeLinecap="round" />
+        </Icon>
+      ),
+    },
+  ],
+};
+
 export default function Sidebar({
   userEmail,
+  role,
   signOutAction,
 }: {
   userEmail?: string | null;
+  role?: string;
   signOutAction: () => Promise<void>;
 }) {
   const pathname = usePathname();
+  const groups = role === "ADMIN" ? [...GROUPS, ADMIN_GROUP] : GROUPS;
   const collapsed = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const persistedWidth = useSyncExternalStore(subscribeWidth, getWidthSnapshot, getServerWidthSnapshot);
   const [dragWidth, setDragWidth] = useState<number | null>(null);
@@ -242,7 +277,7 @@ export default function Sidebar({
       </div>
 
       <nav className="flex-1 space-y-4 overflow-y-auto px-3 py-4">
-        {GROUPS.map((group) => (
+        {groups.map((group) => (
           <div key={group.label}>
             {!collapsed && (
               <p className="mb-1.5 px-2 text-[10.5px] font-semibold uppercase tracking-wide text-sdc-gray-400">

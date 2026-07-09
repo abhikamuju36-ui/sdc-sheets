@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
-import { validJobTypeFilter } from "@/lib/job-filters";
+import { validJobTypeFilter, compareJobIds } from "@/lib/job-filters";
 import { PageTitle } from "@/components/ui/Typography";
 import { PillLinks } from "@/components/ui/PillLinks";
 import { card, INPUT, BUTTON_PRIMARY, BUTTON_SECONDARY, TABLE_HEADER_ROW, TABLE_ROW_HOVER } from "@/components/ui/classnames";
@@ -28,7 +28,8 @@ export default async function JobsPage({
   }
   if (status) where.status = status;
 
-  const jobs = await prisma.job.findMany({ where, orderBy: { jobId: "asc" } });
+  const jobs = await prisma.job.findMany({ where });
+  jobs.sort((a, b) => compareJobIds(a.jobId, b.jobId)); // numeric, not lexicographic
 
   const exportQs = new URLSearchParams();
   if (q) exportQs.set("q", q);

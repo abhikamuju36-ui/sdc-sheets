@@ -1,6 +1,6 @@
 import { Fragment } from "react";
 import { prisma } from "@/lib/prisma";
-import { validJobTypeFilter, VALID_JOB_TYPES } from "@/lib/job-filters";
+import { validJobTypeFilter, VALID_JOB_TYPES, compareJobIds } from "@/lib/job-filters";
 import { SECTIONS, PHASE_GROUPS } from "@/lib/sections";
 import { PageTitle } from "@/components/ui/Typography";
 import { TABLE_HEADER_ROW } from "@/components/ui/classnames";
@@ -74,6 +74,10 @@ export default async function QuotedPage({
     include: { estimatedHours: true },
     orderBy: { [sortKey]: sortDir },
   });
+  if (sortKey === "jobId") {
+    // Job Id is a string column — re-sort numerically (979 before 1020 before 10000).
+    jobs.sort((a, b) => (sortDir === "desc" ? -1 : 1) * compareJobIds(a.jobId, b.jobId));
+  }
 
   const visibleSectionsByPhase = new Map(
     PHASE_GROUPS.map((g) => [g.phase, SECTIONS.filter((s) => s.phase === g.phase && visibleSet.has(s.code))])

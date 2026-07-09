@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
-import { validJobTypeFilter } from "@/lib/job-filters";
+import { validJobTypeFilter, compareJobIds } from "@/lib/job-filters";
 import { getExecutionEtcByJob } from "@/lib/execution-etc";
 import { syncCategoryPoolsFromPowerBi } from "@/lib/sync-powerbi";
 import {
@@ -11,6 +11,7 @@ import {
   calcTotalStandardFees,
 } from "@/lib/standard-fees";
 import { revalidatePath } from "next/cache";
+import { logAudit } from "@/lib/audit";
 import type { Prisma } from "@prisma/client";
 import { BUTTON_PRIMARY, BUTTON_SECONDARY, TABLE_HEADER_ROW } from "@/components/ui/classnames";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -41,20 +42,31 @@ async function saveRates(formData: FormData) {
   "use server";
   const jobIds = formData.getAll("jobId").map((v) => Number(v));
 
+  const rates = jobIds.map((jobId) => ({
+    jobId,
+    engrRate: Number(formData.get(`engrRate__${jobId}`)),
+    shopRate: Number(formData.get(`shopRate__${jobId}`)),
+    partsMarkup: Number(formData.get(`partsMarkup__${jobId}`)),
+    contingencyAmount: Number(formData.get(`contingencyAmount__${jobId}`)) || 0,
+    notes: String(formData.get(`notes__${jobId}`) ?? ""),
+  }));
+
   await Promise.all(
-    jobIds.map((jobId) => {
-      const engrRate = Number(formData.get(`engrRate__${jobId}`));
-      const shopRate = Number(formData.get(`shopRate__${jobId}`));
-      const partsMarkup = Number(formData.get(`partsMarkup__${jobId}`));
-      const contingencyAmount = Number(formData.get(`contingencyAmount__${jobId}`)) || 0;
-      const notes = String(formData.get(`notes__${jobId}`) ?? "");
-      return prisma.executionRate.upsert({
+    rates.map(({ jobId, engrRate, shopRate, partsMarkup, contingencyAmount, notes }) =>
+      prisma.executionRate.upsert({
         where: { jobId },
         update: { engrRate, shopRate, partsMarkup, contingencyAmount, notes },
         create: { jobId, engrRate, shopRate, partsMarkup, contingencyAmount, notes },
-      });
-    })
+      })
+    )
   );
+
+  await logAudit({
+    action: "standardSheet.saveRates",
+    entityType: "ExecutionRate",
+    summary: `Saved execution rates for ${rates.length} job${rates.length === 1 ? "" : "s"}`,
+    metadata: { rates },
+  });
 
   revalidatePath("/standard-sheet");
 }
@@ -62,10 +74,17 @@ async function saveRates(formData: FormData) {
 async function saveContingencyRate(formData: FormData) {
   "use server";
   const contingencyRate = Number(formData.get("contingencyRate"));
+  const before = await prisma.standardSheetSetting.findUnique({ where: { id: 1 } });
   await prisma.standardSheetSetting.upsert({
     where: { id: 1 },
     update: { contingencyRate },
     create: { id: 1, contingencyRate },
+  });
+  await logAudit({
+    action: "standardSheet.saveContingencyRate",
+    entityType: "StandardSheetSetting",
+    summary: `Changed global contingency rate to ${contingencyRate}`,
+    metadata: { before: before ? Number(before.contingencyRate) : null, after: contingencyRate },
   });
   revalidatePath("/standard-sheet");
 }
@@ -83,6 +102,7 @@ async function refreshPools(month: string) {
   "use server";
   await assertMonthNotSubmitted(month);
   await syncCategoryPoolsFromPowerBi(month);
+  await logAudit({ action: "standardSheet.refreshPools", entityType: "CategoryPool", entityId: month, summary: `Refreshed category pools from Power BI for ${month}` });
   revalidatePath("/standard-sheet");
 }
 
@@ -94,6 +114,7 @@ async function savePools(month: string, formData: FormData) {
   "use server";
   await assertMonthNotSubmitted(month);
   const categories = ["ENGINEERING_PM", "ENGINEERING_WARRANTY", "SHOP_MANUFACTURING", "SHOP_WARRANTY"] as const;
+  const changes: Record<string, unknown>[] = [];
 
   for (const category of categories) {
     const pool = await prisma.categoryPool.findUnique({ where: { category_month: { category, month } } });
@@ -108,7 +129,16 @@ async function savePools(month: string, formData: FormData) {
       where: { id: pool.id },
       data: { hoursPulledThisMonth, rate, newEtcHours, standardFee },
     });
+    changes.push({ category, hoursPulledThisMonth, rate, newEtcHours, standardFee });
   }
+
+  await logAudit({
+    action: "standardSheet.savePools",
+    entityType: "CategoryPool",
+    entityId: month,
+    summary: `Saved category pool cells for ${month}`,
+    metadata: { changes },
+  });
 
   revalidatePath("/standard-sheet");
 }
@@ -190,6 +220,13 @@ async function submitStandardSheetMonth(month: string) {
     }),
   ]);
 
+  await logAudit({
+    action: "standardSheet.submitMonth",
+    entityType: "StandardSheetSnapshot",
+    entityId: month,
+    summary: `Submitted Standard Sheet for ${month} (${rows.length} jobs, grand total ${grandTotal.toFixed(2)})`,
+  });
+
   revalidatePath("/standard-sheet");
 }
 
@@ -201,6 +238,7 @@ async function reopenStandardSheetMonth(month: string) {
   const role = (session?.user as { role?: string } | undefined)?.role;
   if (role !== "ADMIN") throw new Error("Only admins can reopen a submitted month.");
   await prisma.standardSheetSnapshot.deleteMany({ where: { month } });
+  await logAudit({ action: "standardSheet.reopenMonth", entityType: "StandardSheetSnapshot", entityId: month, summary: `Reopened Standard Sheet month ${month}` });
   revalidatePath("/standard-sheet");
 }
 
@@ -266,8 +304,8 @@ export default async function StandardSheetPage({
     const snapshots = await prisma.standardSheetSnapshot.findMany({
       where: { month, job: jobFilter },
       include: { job: { select: { jobId: true, jobName: true, status: true } } },
-      orderBy: { job: { jobId: "asc" } },
     });
+    snapshots.sort((a, b) => compareJobIds(a.job.jobId, b.job.jobId)); // numeric, not lexicographic
     rows = snapshots.map((s) => ({
       jobId: s.jobId,
       jobIdLabel: s.job.jobId,
@@ -294,9 +332,9 @@ export default async function StandardSheetPage({
     // narrow the display, never change the math.
     const jobs = await prisma.job.findMany({
       where: { ...validJobTypeFilter, status: "Active", completeDate: null },
-      orderBy: { jobId: "asc" },
       select: { id: true, jobId: true, jobName: true, status: true, executionRate: true },
     });
+    jobs.sort((a, b) => compareJobIds(a.jobId, b.jobId)); // numeric, not lexicographic
     const etcByJob = await getExecutionEtcByJob(jobs.map((j) => j.id), month);
     const poolTotals = {
       engineeringPM: Number(pools.find((p) => p.category === "ENGINEERING_PM")?.standardFee ?? 0),
