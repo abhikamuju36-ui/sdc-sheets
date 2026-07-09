@@ -19,6 +19,7 @@ import {
 import { PageTitle } from "@/components/ui/Typography";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { MonthYearSelect } from "@/components/MonthYearSelect";
+import { DeptColumnFilter } from "@/components/DeptColumnFilter";
 import { BUTTON_PRIMARY, BUTTON_SECONDARY, TABLE_HEADER_ROW, TABLE_GRID } from "@/components/ui/classnames";
 
 // Matches the real "Managers Fill Out" sheet's column shape exactly — every
@@ -30,32 +31,57 @@ const TOTAL_SUB_COLUMNS = ["Prior ETC", "Hours Worked", "Hours Left", "Total New
 
 // The sheet's 5-level header above the column labels: Phase -> billing group
 // (Engineering/Shop) -> sub-group (ME / CE / General Engineering / dept
-// abbreviations) -> colored section cell. Counts are in sections (x5 columns
-// each) and must line up with ETC_SECTIONS' order. Display-only — internal
+// abbreviations) -> colored section cell. Rather than hardcode column counts
+// (which break the moment the Engineering/Shop filter hides some), the header
+// rows are derived at render time from the visible column list by run-length
+// grouping consecutive columns that share a label. Display-only — internal
 // section names/phases in sections.ts are unchanged.
-const ETC_HEADER_PHASES = [
-  { label: "Complete Design and Build", sections: 9 },
-  { label: "Testing", sections: 2 },
-  { label: "Teardown and Install", sections: 2 },
-] as const;
-const ETC_HEADER_GROUPS = [
-  { label: "Engineering", sections: 7 },
-  { label: "Shop", sections: 2 },
-  { label: "Engineering", sections: 1 },
-  { label: "Shop", sections: 1 },
-  { label: "Engineering", sections: 1 },
-  { label: "Shop", sections: 1 },
-] as const;
-const ETC_HEADER_SUBGROUPS = [
-  { label: "ME", sections: 1 },
-  { label: "CE", sections: 2 },
-  { label: "General Engineering", sections: 4 },
-  { label: "Shop", sections: 2 },
-  { label: "ME & CE & GE", sections: 1 },
-  { label: "MB & EB", sections: 1 },
-  { label: "ME & CE & GE", sections: 1 },
-  { label: "MB & EB", sections: 1 },
-] as const;
+const PHASE_DISPLAY: Record<string, string> = {
+  "Complete Design & Build": "Complete Design and Build",
+  "Machine Testing": "Testing",
+  "Teardown & Install": "Teardown and Install",
+};
+const SUBGROUP_DISPLAY: Record<string, string> = {
+  "10-211": "ME",
+  "10-312": "CE",
+  "10-313": "CE",
+  "10-515": "General Engineering",
+  "10-516": "General Engineering",
+  "10-517": "General Engineering",
+  "10-518": "General Engineering",
+  "10-411": "Shop",
+  "10-412": "Shop",
+  "40-211": "ME & CE & GE",
+  "40-411": "MB & EB",
+  "50-211": "ME & CE & GE",
+  "50-411": "MB & EB",
+};
+
+type EtcCol = {
+  code: string;
+  name: string;
+  billingGroup: "Engineering" | "Shop";
+  phaseLabel: string;
+  groupLabel: string;
+  subgroupLabel: string;
+  sectionDisplay: string;
+};
+
+// Consecutive columns sharing keyOf(col) collapse into one header cell whose
+// colSpan is count × 5 (the sub-columns per section). Used for the phase,
+// billing-group, and sub-group header rows.
+function headerRuns(cols: EtcCol[], keyOf: (c: EtcCol) => string, labelOf: (c: EtcCol) => string) {
+  const runs: { key: string; label: string; count: number }[] = [];
+  for (const c of cols) {
+    const key = keyOf(c);
+    const last = runs[runs.length - 1];
+    if (last && last.key === key) last.count += 1;
+    else runs.push({ key, label: labelOf(c), count: 1 });
+  }
+  return runs;
+}
+
+const DEPT_GROUPS = ["Engineering", "Shop"] as const;
 
 // Colored section-cell labels, exactly as the sheet prints them (no "CE"
 // prefixes; Testing/Teardown show "All"/"Total" rather than section names).
@@ -111,6 +137,18 @@ const SECTION_HEADER_COLOR_LIGHT: Record<string, string> = {
   "40-411": "bg-[#E6AC89]/15",
   "50-411": "bg-[#E6AC89]/15",
 };
+
+// The full ETC column list with all its header-row labels resolved once, so
+// filtering is just `.filter(...)` on this and the header derives from it.
+const ALL_ETC_COLS: EtcCol[] = ETC_SECTIONS.map((s) => ({
+  code: s.code,
+  name: s.name,
+  billingGroup: s.billingGroup,
+  phaseLabel: PHASE_DISPLAY[s.phase] ?? s.phase,
+  groupLabel: s.billingGroup,
+  subgroupLabel: SUBGROUP_DISPLAY[s.code] ?? s.name,
+  sectionDisplay: ETC_SECTION_DISPLAY[s.code] ?? s.name,
+}));
 
 // Column-identity backgrounds for the 5-column block shared by every
 // department/Parts Cost/Engineering/Shop group, matching the real sheet.
@@ -183,9 +221,21 @@ function currentMonth() {
 export default async function MonthlyEtcPage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string }>;
+  searchParams: Promise<{ month?: string; dept?: string }>;
 }) {
-  const { month: monthParam } = await searchParams;
+  const { month: monthParam, dept: deptParam } = await searchParams;
+
+  // Engineering / Shop column filter. Empty or absent => show both (the full
+  // grid); the grid can never collapse to zero section columns.
+  const selectedGroups = (() => {
+    const raw = (deptParam ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter((g): g is (typeof DEPT_GROUPS)[number] => g === "Engineering" || g === "Shop");
+    return new Set(raw.length ? raw : DEPT_GROUPS);
+  })();
+  const visibleCols = ALL_ETC_COLS.filter((c) => selectedGroups.has(c.billingGroup));
+  const visibleGroups = DEPT_GROUPS.filter((g) => selectedGroups.has(g));
 
   const distinctMonths = await prisma.etcEntry.findMany({
     distinct: ["month"],
@@ -353,6 +403,7 @@ export default async function MonthlyEtcPage({
           lockedMonths={lockedMonthList}
           nextStartable={nextStartable}
         />
+        <DeptColumnFilter selected={visibleGroups} />
         {!locked && (
           <form action={syncPowerBiForEtc.bind(null, month)}>
             <button type="submit" className={BUTTON_PRIMARY}>
@@ -442,15 +493,15 @@ export default async function MonthlyEtcPage({
                     Job Id
                   </th>
                   <th rowSpan={5} className="sticky left-[120px] z-10 bg-sdc-gray-100 px-3 py-3 align-bottom">Job Name</th>
-                  {ETC_HEADER_PHASES.map((p, i) => (
-                    <th key={p.label + i} colSpan={p.sections * SUB_COLUMNS.length} className="border-l border-sdc-border px-3 py-1.5 text-center">
+                  {headerRuns(visibleCols, (c) => c.phaseLabel, (c) => c.phaseLabel).map((p, i) => (
+                    <th key={p.key + i} colSpan={p.count * SUB_COLUMNS.length} className="border-l border-sdc-border px-3 py-1.5 text-center">
                       {p.label}
                     </th>
                   ))}
                   <th colSpan={PARTS_COST_SUB_COLUMNS.length} className="border-l border-sdc-border bg-sdc-gray-100 px-3 py-1.5 text-center text-sdc-gray-700">
                     Parts Cost
                   </th>
-                  <th colSpan={2 * TOTAL_SUB_COLUMNS.length} className="border-l border-sdc-border bg-[#FDFDE3] px-3 py-1.5 text-center text-sdc-navy">
+                  <th colSpan={visibleGroups.length * TOTAL_SUB_COLUMNS.length} className="border-l border-sdc-border bg-[#FDFDE3] px-3 py-1.5 text-center text-sdc-navy">
                     Total (New ETC)
                   </th>
                   {showStandards && (
@@ -465,8 +516,8 @@ export default async function MonthlyEtcPage({
                 </tr>
                 {/* Billing-group row: Engineering / Shop per phase, like the sheet. */}
                 <tr className={TABLE_HEADER_ROW}>
-                  {ETC_HEADER_GROUPS.map((g, i) => (
-                    <th key={g.label + i} colSpan={g.sections * SUB_COLUMNS.length} className="border-l border-sdc-border px-2 py-1 text-center font-medium">
+                  {headerRuns(visibleCols, (c) => `${c.phaseLabel}|${c.groupLabel}`, (c) => c.groupLabel).map((g, i) => (
+                    <th key={g.key + i} colSpan={g.count * SUB_COLUMNS.length} className="border-l border-sdc-border px-2 py-1 text-center font-medium">
                       {g.label}
                     </th>
                   ))}
@@ -475,30 +526,32 @@ export default async function MonthlyEtcPage({
                   <th rowSpan={3} colSpan={PARTS_COST_SUB_COLUMNS.length} className="border-l border-sdc-border bg-[#00B050] px-2 py-1 text-center text-white">
                     Total
                   </th>
-                  <th colSpan={TOTAL_SUB_COLUMNS.length} className="border-l border-sdc-border bg-[#FDFDE3] px-2 py-1 text-center font-medium text-sdc-navy">
-                    Engineering
-                  </th>
-                  <th colSpan={TOTAL_SUB_COLUMNS.length} className="border-l border-sdc-border bg-[#FDFDE3] px-2 py-1 text-center font-medium text-sdc-navy">
-                    Shop
-                  </th>
+                  {visibleGroups.map((group) => (
+                    <th key={group} colSpan={TOTAL_SUB_COLUMNS.length} className="border-l border-sdc-border bg-[#FDFDE3] px-2 py-1 text-center font-medium text-sdc-navy">
+                      {group}
+                    </th>
+                  ))}
                 </tr>
                 {/* Sub-group row: ME / CE / General Engineering / dept abbreviations. */}
                 <tr className={TABLE_HEADER_ROW}>
-                  {ETC_HEADER_SUBGROUPS.map((g, i) => (
-                    <th key={g.label + i} colSpan={g.sections * SUB_COLUMNS.length} className="border-l border-sdc-border px-2 py-1 text-center font-medium">
+                  {headerRuns(
+                    visibleCols,
+                    (c) => `${c.phaseLabel}|${c.groupLabel}|${c.subgroupLabel}`,
+                    (c) => c.subgroupLabel,
+                  ).map((g, i) => (
+                    <th key={g.key + i} colSpan={g.count * SUB_COLUMNS.length} className="border-l border-sdc-border px-2 py-1 text-center font-medium">
                       {g.label}
                     </th>
                   ))}
-                  <th colSpan={TOTAL_SUB_COLUMNS.length} className="border-l border-sdc-border bg-[#FDFDE3] px-2 py-1 text-center font-medium text-sdc-navy">
-                    ME &amp; CE &amp; GE
-                  </th>
-                  <th colSpan={TOTAL_SUB_COLUMNS.length} className="border-l border-sdc-border bg-[#FDFDE3] px-2 py-1 text-center font-medium text-sdc-navy">
-                    MB &amp; EB
-                  </th>
+                  {visibleGroups.map((group) => (
+                    <th key={group} colSpan={TOTAL_SUB_COLUMNS.length} className="border-l border-sdc-border bg-[#FDFDE3] px-2 py-1 text-center font-medium text-sdc-navy">
+                      {group === "Engineering" ? "ME & CE & GE" : "MB & EB"}
+                    </th>
+                  ))}
                 </tr>
                 {/* Colored section row, labels exactly as the sheet prints them. */}
                 <tr className={TABLE_HEADER_ROW}>
-                  {ETC_SECTIONS.map((s) => {
+                  {visibleCols.map((s) => {
                     const color = SECTION_HEADER_COLOR[s.code];
                     return (
                       <th
@@ -507,19 +560,22 @@ export default async function MonthlyEtcPage({
                         colSpan={SUB_COLUMNS.length}
                         className={`border-l border-sdc-border px-2 py-1 text-center ${color ?? ""}`}
                       >
-                        {ETC_SECTION_DISPLAY[s.code] ?? s.name}
+                        {s.sectionDisplay}
                       </th>
                     );
                   })}
-                  <th colSpan={TOTAL_SUB_COLUMNS.length} className="border-l border-sdc-border bg-[#D1ECF9] px-2 py-1 text-center text-sdc-navy">
-                    All
-                  </th>
-                  <th colSpan={TOTAL_SUB_COLUMNS.length} className="border-l border-sdc-border bg-[#E6AC89] px-2 py-1 text-center text-sdc-navy">
-                    All
-                  </th>
+                  {visibleGroups.map((group) => (
+                    <th
+                      key={group}
+                      colSpan={TOTAL_SUB_COLUMNS.length}
+                      className={`border-l border-sdc-border px-2 py-1 text-center text-sdc-navy ${group === "Engineering" ? "bg-[#D1ECF9]" : "bg-[#E6AC89]"}`}
+                    >
+                      All
+                    </th>
+                  ))}
                 </tr>
                 <tr className={TABLE_HEADER_ROW}>
-                  {ETC_SECTIONS.map((s) =>
+                  {visibleCols.map((s) =>
                     SUB_COLUMNS.map((col) => (
                       <th
                         key={`${s.code}-${col}`}
@@ -541,7 +597,7 @@ export default async function MonthlyEtcPage({
                       {col}
                     </th>
                   ))}
-                  {(["Engineering", "Shop"] as const).map((group) =>
+                  {visibleGroups.map((group) =>
                     TOTAL_SUB_COLUMNS.map((col) => (
                       <th
                         key={`${group}-${col}`}
@@ -603,7 +659,7 @@ export default async function MonthlyEtcPage({
                       >
                         {job.jobName}
                       </td>
-                      {ETC_SECTIONS.map((s) => {
+                      {visibleCols.map((s) => {
                         const entry = entryByCode.get(s.code);
                         if (!entry) {
                           return SUB_COLUMNS.map((col) => (
@@ -737,7 +793,7 @@ export default async function MonthlyEtcPage({
                           </Fragment>
                         );
                       })()}
-                      {(["Engineering", "Shop"] as const).map((group) => {
+                      {visibleGroups.map((group) => {
                         const hoursLeft = totals[group].prior - totals[group].worked;
                         const diff = hoursLeft - totals[group].newEtc;
                         groupGrandTotals[group].prior += totals[group].prior;
@@ -796,7 +852,7 @@ export default async function MonthlyEtcPage({
                     <td
                       colSpan={
                         3 +
-                        (ETC_SECTIONS.length + 2) * SUB_COLUMNS.length +
+                        (visibleCols.length + visibleGroups.length) * SUB_COLUMNS.length +
                         PARTS_COST_SUB_COLUMNS.length +
                         (showStandards ? STANDARD_LEAF_COLUMNS.length : 0)
                       }
@@ -811,7 +867,7 @@ export default async function MonthlyEtcPage({
                     <td className="sticky left-0 z-10 bg-sdc-gray-100 px-3 py-2" colSpan={3}>
                       Total
                     </td>
-                    {ETC_SECTIONS.map((s) => {
+                    {visibleCols.map((s) => {
                       const t = sectionGrandTotals.get(s.code)!;
                       const hoursLeft = t.prior - t.worked;
                       const diff = hoursLeft - t.newEtc;
@@ -839,7 +895,7 @@ export default async function MonthlyEtcPage({
                         </Fragment>
                       );
                     })()}
-                    {(["Engineering", "Shop"] as const).map((group) => {
+                    {visibleGroups.map((group) => {
                       const t = groupGrandTotals[group];
                       const hoursLeft = t.prior - t.worked;
                       const diff = hoursLeft - t.newEtc;
