@@ -5,7 +5,7 @@ import { notFound } from "next/navigation";
 import { PageTitle, SectionTitle } from "@/components/ui/Typography";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { PillLinks } from "@/components/ui/PillLinks";
-import { card, INPUT, BUTTON_PRIMARY, BUTTON_SECONDARY, LABEL, TABLE_HEADER_ROW } from "@/components/ui/classnames";
+import { card, INPUT, BUTTON_PRIMARY, BUTTON_SECONDARY, LABEL, TABLE_HEADER_ROW, TABLE_GRID } from "@/components/ui/classnames";
 import { saveJobTask, deleteJobTask } from "@/lib/jobtask-actions";
 import { Fragment } from "react";
 
@@ -313,7 +313,7 @@ export default async function JobDetailPage({
               <div className="border-b border-sdc-border-soft px-4 py-3">
                 <SectionTitle>Actual Hours by Month (Power BI)</SectionTitle>
               </div>
-              <table className="w-full text-sm">
+              <table className={`w-full text-sm ${TABLE_GRID}`}>
                 <thead>
                   <tr className={TABLE_HEADER_ROW}>
                     <th className="px-4 py-2">Month</th>
@@ -321,9 +321,9 @@ export default async function JobDetailPage({
                     <th className="px-4 py-2">Correction</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-sdc-border-soft">
-                  {monthlyActualHours.map((m) => (
-                    <tr key={m.id}>
+                <tbody>
+                  {monthlyActualHours.map((m, i) => (
+                    <tr key={m.id} className={i % 2 === 1 ? "bg-sdc-gray-50/60" : ""}>
                       <td className="px-4 py-2 font-medium text-sdc-navy align-top">{m.month}</td>
                       <td className="px-4 py-2 align-top">
                         {m.actualHours.toString()}
@@ -383,7 +383,7 @@ export default async function JobDetailPage({
           </p>
           {estimatedHours.length > 0 ? (
             <div className={`${card("p-0")} overflow-hidden`}>
-              <table className="w-full text-sm">
+              <table className={`w-full text-sm ${TABLE_GRID}`}>
                 <thead>
                   <tr className={TABLE_HEADER_ROW}>
                     <th className="px-4 py-3">Section</th>
@@ -392,9 +392,9 @@ export default async function JobDetailPage({
                     <th className="px-4 py-3">Estimate to Complete</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-sdc-border-soft">
-                  {estimatedHours.map((eh) => (
-                    <tr key={eh.id}>
+                <tbody>
+                  {estimatedHours.map((eh, i) => (
+                    <tr key={eh.id} className={i % 2 === 1 ? "bg-sdc-gray-50/60" : ""}>
                       <td className="px-4 py-2 font-medium text-sdc-navy">{eh.section}</td>
                       <td className="px-4 py-2">{eh.quotedHours.toString()}</td>
                       <td className="px-4 py-2">{eh.actualHistoricalHours.toString()}</td>
@@ -417,7 +417,7 @@ export default async function JobDetailPage({
             Planner workbook.
           </p>
           <div className={`${card("p-0")} overflow-hidden`}>
-            <table className="w-full text-sm">
+            <table className={`w-full text-sm ${TABLE_GRID}`}>
               <thead>
                 <tr className={TABLE_HEADER_ROW}>
                   <th className="px-4 py-3">Task / Person</th>
@@ -425,9 +425,9 @@ export default async function JobDetailPage({
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-sdc-border-soft">
-                {tasks.map((t) => (
-                  <tr key={t.id}>
+              <tbody>
+                {tasks.map((t, i) => (
+                  <tr key={t.id} className={i % 2 === 1 ? "bg-sdc-gray-50/60" : ""}>
                     <td className="px-4 py-2">
                       <input
                         name="taskName"

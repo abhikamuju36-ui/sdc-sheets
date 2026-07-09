@@ -13,7 +13,7 @@ import {
 import { revalidatePath } from "next/cache";
 import { logAudit } from "@/lib/audit";
 import type { Prisma } from "@prisma/client";
-import { BUTTON_PRIMARY, BUTTON_SECONDARY, TABLE_HEADER_ROW } from "@/components/ui/classnames";
+import { BUTTON_PRIMARY, BUTTON_SECONDARY, TABLE_HEADER_ROW, TABLE_GRID } from "@/components/ui/classnames";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { PillLinks } from "@/components/ui/PillLinks";
 import { SelectOnFocusInput } from "@/components/SelectOnFocusInput";
@@ -524,7 +524,7 @@ export default async function StandardSheetPage({
         </h2>
         <form action={savePools.bind(null, month)}>
           <div className="overflow-x-auto rounded-xl border border-sdc-border bg-white shadow-sm">
-            <table className="text-sm">
+            <table className={`text-sm ${TABLE_GRID}`}>
               <thead>
                 <tr className={TABLE_HEADER_ROW}>
                   <th className="px-3 py-2">Billing Group</th>
@@ -539,16 +539,17 @@ export default async function StandardSheetPage({
                   <th className="border-l border-sdc-border px-3 py-2 text-right">Standard Fee</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-sdc-border-soft">
-                {POOL_ROWS.map(({ category, group, dept, hint }) => {
+              <tbody>
+                {POOL_ROWS.map(({ category, group, dept, hint }, i) => {
                   const pool = poolByCategory.get(category);
                   const groupBg = group === "Engineering" ? "bg-[#D9E7F5]" : "bg-[#FBE2D5]";
+                  const zebra = i % 2 === 1 ? "bg-sdc-gray-50/60" : "";
                   if (!pool) {
                     return (
-                      <tr key={category}>
+                      <tr key={category} className={zebra}>
                         <td className={`px-3 py-2 font-medium text-sdc-navy ${groupBg}`}>{group}</td>
                         <td className="px-3 py-2 text-sdc-gray-700">{dept}</td>
-                        <td colSpan={8} className="border-l border-sdc-border px-3 py-2 text-sdc-gray-400">
+                        <td colSpan={8} className="px-3 py-2 text-sdc-gray-400">
                           No pool data for {month} — use &quot;Refresh Pools (Power BI)&quot;.
                         </td>
                       </tr>
@@ -559,10 +560,10 @@ export default async function StandardSheetPage({
                   const rate = Number(pool.rate);
                   const newEtc = available - pulled;
                   return (
-                    <tr key={category} className="hover:bg-sdc-blue-light/40">
+                    <tr key={category} className={`hover:bg-sdc-blue-light/40 ${zebra}`}>
                       <td className={`px-3 py-2 font-medium text-sdc-navy ${groupBg}`}>{group}</td>
                       <td className="px-3 py-2 text-sdc-gray-700">{dept}</td>
-                      <td className="border-l border-sdc-border px-3 py-2 text-right text-xs text-sdc-navy">
+                      <td className="px-3 py-2 text-right text-xs text-sdc-navy">
                         {Number(pool.previousMonthPulledHours).toLocaleString()}
                       </td>
                       <td className="px-3 py-2 text-right text-xs text-sdc-navy">
@@ -602,7 +603,7 @@ export default async function StandardSheetPage({
                           <span className="text-xs text-sdc-gray-500">{rate.toLocaleString()}</span>
                         )}
                       </td>
-                      <td className="border-l border-sdc-border px-3 py-2 text-right text-xs font-semibold text-sdc-navy">
+                      <td className="px-3 py-2 text-right text-xs font-semibold text-sdc-navy">
                         {currency(Number(pool.standardFee))}
                       </td>
                     </tr>
@@ -619,7 +620,7 @@ export default async function StandardSheetPage({
                       Shop Total: {currency(shopTotal)}
                     </span>
                   </td>
-                  <td className="border-l border-sdc-border px-3 py-2 text-right font-semibold text-sdc-navy">
+                  <td className="px-3 py-2 text-right font-semibold text-sdc-navy">
                     {currency(engineeringTotal + shopTotal)}
                   </td>
                 </tr>
@@ -638,7 +639,7 @@ export default async function StandardSheetPage({
 
       <form action={saveRates}>
         <div className="overflow-x-auto rounded-xl border border-sdc-border bg-white shadow-sm">
-          <table className="text-sm">
+          <table className={`text-sm ${TABLE_GRID}`}>
             <thead>
               <tr className={TABLE_HEADER_ROW}>
                 <th rowSpan={3} className="sticky left-0 z-10 bg-white px-3 py-3 align-bottom">Job Id</th>
@@ -677,10 +678,12 @@ export default async function StandardSheetPage({
                 <th className="bg-[#D6E4F0] px-2 py-1.5 text-center text-[10px] text-sdc-blue-dark">MFG/Warranty</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-sdc-border-soft">
-              {rows.map((r) => (
-                <tr key={r.jobId} className="hover:bg-sdc-blue-light/40">
-                  <td className="sticky left-0 z-10 bg-white px-3 py-2 font-mono text-sdc-gray-400">{r.jobIdLabel}</td>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={r.jobId} className={`hover:bg-sdc-blue-light/40 ${i % 2 === 1 ? "bg-sdc-gray-50/60" : ""}`}>
+                  <td className={`sticky left-0 z-10 px-3 py-2 font-mono text-sdc-gray-400 ${i % 2 === 1 ? "bg-sdc-gray-50/60" : "bg-white"}`}>
+                    {r.jobIdLabel}
+                  </td>
                   <td className="max-w-[220px] truncate px-3 py-2 font-medium text-sdc-navy" title={r.jobName}>
                     {r.jobName}
                   </td>

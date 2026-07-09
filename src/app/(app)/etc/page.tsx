@@ -9,7 +9,7 @@ import { submitMonth, reopenMonth, clearMonth, syncPowerBiForEtc } from "@/lib/e
 import { PageTitle } from "@/components/ui/Typography";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { MonthSelect } from "@/components/MonthSelect";
-import { BUTTON_PRIMARY, BUTTON_SECONDARY, TABLE_HEADER_ROW } from "@/components/ui/classnames";
+import { BUTTON_PRIMARY, BUTTON_SECONDARY, TABLE_HEADER_ROW, TABLE_GRID } from "@/components/ui/classnames";
 
 // Matches the real "Managers Fill Out" sheet's column shape exactly — every
 // department block (and the Total rollup) has these same 5 columns.
@@ -224,7 +224,7 @@ export default async function MonthlyEtcPage({
       {started && (
         <form id="etc-month-form" action={submitMonth.bind(null, month)}>
           <div className="overflow-x-auto rounded-xl border border-sdc-border bg-white shadow-sm">
-            <table className="w-full text-sm">
+            <table className={`w-full text-sm ${TABLE_GRID}`}>
               <thead>
                 <tr className={TABLE_HEADER_ROW}>
                   <th rowSpan={3} className="sticky left-0 z-10 w-20 min-w-20 bg-sdc-gray-100 px-3 py-3 align-bottom">
@@ -315,9 +315,10 @@ export default async function MonthlyEtcPage({
                   )}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-sdc-border-soft">
-                {jobs.map((job) => {
+              <tbody>
+                {jobs.map((job, jobIndex) => {
                   const entryByCode = new Map(job.etcEntries.map((e) => [e.section, e]));
+                  const zebra = jobIndex % 2 === 1 ? "bg-sdc-gray-50/60" : "";
 
                   // Effective New ETC: confirmed value once submitted; before
                   // that, the manager's autosaved draft if any, else the
@@ -341,10 +342,10 @@ export default async function MonthlyEtcPage({
                   }
 
                   return (
-                    <tr key={job.id} className="hover:bg-sdc-blue-light/40">
-                      <td className="sticky left-0 z-10 w-20 min-w-20 bg-white px-3 py-1 font-mono text-sdc-gray-400">{job.jobId}</td>
+                    <tr key={job.id} className={`hover:bg-sdc-blue-light/40 ${zebra}`}>
+                      <td className={`sticky left-0 z-10 w-20 min-w-20 px-3 py-1 font-mono text-sdc-gray-400 ${zebra || "bg-white"}`}>{job.jobId}</td>
                       <td
-                        className="sticky left-20 z-10 max-w-56 truncate whitespace-nowrap bg-white px-3 py-1 font-medium text-sdc-navy"
+                        className={`sticky left-20 z-10 max-w-56 truncate whitespace-nowrap px-3 py-1 font-medium text-sdc-navy ${zebra || "bg-white"}`}
                         title={job.jobName}
                       >
                         {job.jobName}

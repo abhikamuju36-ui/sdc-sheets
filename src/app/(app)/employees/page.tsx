@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createEmployee, updateEmployee, setEmployeeActive } from "@/lib/employee-actions";
 import { PageTitle } from "@/components/ui/Typography";
 import { StatusBadge } from "@/components/ui/StatusBadge";
-import { card, BUTTON_PRIMARY, BUTTON_SECONDARY, INPUT, LABEL, TABLE_HEADER_ROW, TABLE_ROW_HOVER } from "@/components/ui/classnames";
+import { card, BUTTON_PRIMARY, BUTTON_SECONDARY, INPUT, LABEL, TABLE_HEADER_ROW, TABLE_ROW_HOVER, TABLE_GRID } from "@/components/ui/classnames";
 
 // Replaces the "Employees" tab of Project Planner Data Control.xlsx.
 // Soft-delete only: deactivating keeps every historical hour intact.
@@ -82,7 +82,7 @@ export default async function EmployeesPage({
 
       {/* List — row edit forms live outside the table (HTML forbids <form> in <tr>), linked via the form attribute. */}
       <div className={`${card("p-0")} overflow-hidden`}>
-        <table className="w-full text-sm">
+        <table className={`w-full text-sm ${TABLE_GRID}`}>
           <thead>
             <tr className={TABLE_HEADER_ROW}>
               <th className="px-4 py-3">Name</th>
@@ -93,9 +93,9 @@ export default async function EmployeesPage({
               <th className="px-3 py-3 text-right">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-sdc-border-soft">
-            {employees.map((e) => (
-              <tr key={e.id} className={TABLE_ROW_HOVER}>
+          <tbody>
+            {employees.map((e, i) => (
+              <tr key={e.id} className={`${TABLE_ROW_HOVER} ${i % 2 === 1 ? "bg-sdc-gray-50/60" : ""}`}>
                 <td className="px-4 py-2">
                   <input name="name" defaultValue={e.name} required form={`emp-${e.id}`} className={cellInput} aria-label={`Name, ${e.name}`} />
                 </td>

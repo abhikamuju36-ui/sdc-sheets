@@ -24,3 +24,9 @@ export const TABLE_HEADER_ROW =
   "border-b-2 border-sdc-border text-left text-[11px] font-semibold uppercase tracking-wider text-sdc-gray-600";
 
 export const TABLE_ROW_HOVER = "transition-colors hover:bg-sdc-blue-light/40";
+
+// Full gridlines + tabular-width numerals — makes data tables read like a
+// spreadsheet grid (what finance/PM reviewers expect) instead of a generic
+// borderless admin-table list.
+export const TABLE_GRID =
+  "border-collapse [&_th]:border [&_th]:border-sdc-border [&_td]:border [&_td]:border-sdc-border-soft [&_td]:tabular-nums";

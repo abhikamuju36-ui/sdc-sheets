@@ -4,7 +4,7 @@ import type { Prisma } from "@prisma/client";
 import { validJobTypeFilter, compareJobIds } from "@/lib/job-filters";
 import { PageTitle } from "@/components/ui/Typography";
 import { PillLinks } from "@/components/ui/PillLinks";
-import { card, INPUT, BUTTON_PRIMARY, BUTTON_SECONDARY, TABLE_HEADER_ROW, TABLE_ROW_HOVER } from "@/components/ui/classnames";
+import { card, INPUT, BUTTON_PRIMARY, BUTTON_SECONDARY, TABLE_HEADER_ROW, TABLE_ROW_HOVER, TABLE_GRID } from "@/components/ui/classnames";
 
 const STATUS_FILTERS = [
   { key: "all", label: "All", status: undefined },
@@ -77,7 +77,7 @@ export default async function JobsPage({
       </div>
 
       <div className="overflow-hidden rounded-xl border border-sdc-border bg-white shadow-sm">
-        <table className="w-full text-sm">
+        <table className={`w-full text-sm ${TABLE_GRID}`}>
           <thead>
             <tr className={TABLE_HEADER_ROW}>
               <th className="px-4 py-3">Job Id</th>
@@ -87,7 +87,7 @@ export default async function JobsPage({
               <th className="px-4 py-3">Status</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-sdc-border-soft">
+          <tbody>
             {jobs.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-4 py-5 text-sdc-gray-400">
@@ -95,8 +95,8 @@ export default async function JobsPage({
                 </td>
               </tr>
             )}
-            {jobs.map((job) => (
-              <tr key={job.id} className={TABLE_ROW_HOVER}>
+            {jobs.map((job, i) => (
+              <tr key={job.id} className={`${TABLE_ROW_HOVER} ${i % 2 === 1 ? "bg-sdc-gray-50/60" : ""}`}>
                 <td className="px-4 py-2 font-mono text-sdc-gray-400">
                   <Link href={`/jobs/${job.id}`} className="hover:underline">
                     {job.jobId}

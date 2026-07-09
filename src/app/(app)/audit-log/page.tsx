@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { PageTitle } from "@/components/ui/Typography";
-import { card, INPUT, BUTTON_SECONDARY, TABLE_HEADER_ROW, TABLE_ROW_HOVER } from "@/components/ui/classnames";
+import { card, INPUT, BUTTON_SECONDARY, TABLE_HEADER_ROW, TABLE_ROW_HOVER, TABLE_GRID } from "@/components/ui/classnames";
 import type { Prisma } from "@prisma/client";
 
 const PAGE_SIZE = 100;
@@ -85,7 +85,7 @@ export default async function AuditLogPage({
       </form>
 
       <div className={`${card("p-0")} overflow-hidden`}>
-        <table className="w-full text-sm">
+        <table className={`w-full text-sm ${TABLE_GRID}`}>
           <thead>
             <tr className={TABLE_HEADER_ROW}>
               <th className="px-4 py-3">When</th>
@@ -95,9 +95,9 @@ export default async function AuditLogPage({
               <th className="px-3 py-3">Summary</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-sdc-border-soft">
-            {logs.map((log) => (
-              <tr key={log.id} className={`${TABLE_ROW_HOVER} align-top`}>
+          <tbody>
+            {logs.map((log, i) => (
+              <tr key={log.id} className={`${TABLE_ROW_HOVER} align-top ${i % 2 === 1 ? "bg-sdc-gray-50/60" : ""}`}>
                 <td className="whitespace-nowrap px-4 py-2 text-xs text-sdc-gray-500">
                   {log.createdAt.toISOString().slice(0, 16).replace("T", " ")}
                 </td>
