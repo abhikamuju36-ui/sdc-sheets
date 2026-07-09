@@ -1,9 +1,10 @@
 import { Fragment } from "react";
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { validJobTypeFilter, VALID_JOB_TYPES, compareJobIds } from "@/lib/job-filters";
 import { SECTIONS, PHASE_GROUPS } from "@/lib/sections";
 import { PageTitle } from "@/components/ui/Typography";
-import { TABLE_HEADER_ROW, TABLE_GRID } from "@/components/ui/classnames";
+import { TABLE_HEADER_ROW, TABLE_GRID, BUTTON_PRIMARY } from "@/components/ui/classnames";
 import { PhaseColumnPicker } from "@/components/PhaseColumnPicker";
 import { MultiSelectFilter } from "@/components/MultiSelectFilter";
 import { SortButton } from "@/components/SortButton";
@@ -92,7 +93,12 @@ export default async function QuotedPage({
 
   return (
     <div className="w-full p-8">
-      <PageTitle className="mb-1">Quoted</PageTitle>
+      <div className="mb-1 flex items-center justify-between gap-3">
+        <PageTitle>Projects</PageTitle>
+        <Link href="/quoted/new" className={BUTTON_PRIMARY}>
+          + Add Project
+        </Link>
+      </div>
       <p className="mb-4 text-sm text-sdc-gray-600">
         {jobs.length} jobs — quoted hours by section, quoted vs. actual cost. Click a phase to choose which section columns to show.
       </p>
@@ -111,9 +117,9 @@ export default async function QuotedPage({
         ))}
       </div>
 
-      <div className="overflow-x-auto border border-sdc-border bg-white shadow-sm">
+      <div className="max-h-[calc(100vh-220px)] min-w-[480px] overflow-auto border border-sdc-border bg-white shadow-sm select-none styled-scrollbar">
         <table className={`w-full text-sm ${TABLE_GRID}`}>
-          <thead>
+          <thead className="sticky top-0 z-20 bg-sdc-gray-100">
             <tr className={TABLE_HEADER_ROW}>
               <th rowSpan={2} className="sticky left-0 z-10 w-8 min-w-8 bg-sdc-gray-100 px-1 py-2 text-center align-bottom">
                 #
@@ -164,14 +170,14 @@ export default async function QuotedPage({
                 if (!sections.length) return [];
                 return [
                   ...sections.map((s) => (
-                    <th key={s.code} title={s.code} className="w-14 border-l border-sdc-border px-1 py-1.5 text-right text-[10px]">
+                    <th key={s.code} title={s.code} className="w-12 border-l border-sdc-border px-1 py-1.5 text-right text-[10px]">
                       {s.name}
                       <span className="block font-mono text-[9px] font-normal normal-case tracking-normal text-sdc-gray-400">
                         {s.code}
                       </span>
                     </th>
                   )),
-                  <th key={`${g.phase}-total`} className="w-14 border-l border-sdc-border bg-sdc-blue-light px-1 py-1.5 text-right text-[10px] text-sdc-blue-dark">
+                  <th key={`${g.phase}-total`} className="w-12 border-l border-sdc-border bg-sdc-blue-light px-1 py-1.5 text-right text-[10px] text-sdc-blue-dark">
                     Total
                   </th>,
                 ];
@@ -189,15 +195,16 @@ export default async function QuotedPage({
             {jobs.map((job, i) => {
               const hoursBySection = new Map(job.estimatedHours.map((eh) => [eh.section, eh.quotedHours]));
               const zebra = i % 2 === 1 ? "bg-sdc-gray-50/60" : "";
+              const zebraSticky = i % 2 === 1 ? "bg-sdc-gray-50" : "bg-white";
               return (
                 <tr key={job.id} className={`hover:bg-sdc-blue-light/40 ${zebra}`}>
-                  <td className={`sticky left-0 z-10 w-8 min-w-8 px-1 py-1.5 text-center text-xs text-sdc-gray-400 ${zebra || "bg-white"}`}>
+                  <td className={`sticky left-0 z-10 w-8 min-w-8 px-1 py-1.5 text-center text-xs text-sdc-gray-400 ${zebraSticky}`}>
                     {i + 1}
                   </td>
-                  <td className={`sticky left-8 z-10 whitespace-nowrap px-2 py-1.5 font-mono text-xs text-sdc-gray-500 ${zebra || "bg-white"}`}>
+                  <td className={`sticky left-8 z-10 whitespace-nowrap px-2 py-1.5 font-mono text-xs text-sdc-gray-500 ${zebraSticky}`}>
                     #{job.jobId}
                   </td>
-                  <td className={`sticky left-[96px] z-10 min-w-[280px] whitespace-nowrap border-l border-sdc-border px-2 py-1.5 text-xs font-medium text-sdc-navy ${zebra || "bg-white"}`}>
+                  <td className={`sticky left-[96px] z-10 min-w-[280px] whitespace-nowrap border-l border-sdc-border px-2 py-1.5 text-xs font-medium text-sdc-navy ${zebraSticky}`}>
                     {job.jobName}
                   </td>
                   <td className="whitespace-nowrap px-2 py-1.5 text-xs text-sdc-gray-600">{job.customer || "—"}</td>
@@ -217,7 +224,7 @@ export default async function QuotedPage({
                     const total = allSections.reduce((sum, s) => sum + Number(hoursBySection.get(s.code) ?? 0), 0);
                     if (!visibleSections.length) {
                       return (
-                        <td key={g.phase} className="border-l border-sdc-border px-1.5 py-1.5 text-right font-mono text-xs text-sdc-gray-600">
+                        <td key={g.phase} className="border-l border-sdc-border px-1 py-1.5 text-right font-mono text-xs text-sdc-gray-600">
                           {wholeHours(total)}
                         </td>
                       );
@@ -227,21 +234,21 @@ export default async function QuotedPage({
                         {visibleSections.map((s) => {
                           const hours = hoursBySection.get(s.code);
                           return (
-                            <td key={s.code} className="border-l border-sdc-border px-1.5 py-1.5 text-right font-mono text-xs text-sdc-gray-600">
+                            <td key={s.code} className="border-l border-sdc-border px-1 py-1.5 text-right font-mono text-xs text-sdc-gray-600">
                               {wholeHours(hours)}
                             </td>
                           );
                         })}
-                        <td className="border-l border-sdc-border bg-sdc-blue-light/30 px-1.5 py-1.5 text-right font-mono text-xs font-medium text-sdc-navy">
+                        <td className="border-l border-sdc-border bg-sdc-blue-light/30 px-1 py-1.5 text-right font-mono text-xs font-medium text-sdc-navy">
                           {wholeHours(total)}
                         </td>
                       </Fragment>
                     );
                   })}
-                  <td className={`sticky right-[84px] z-10 whitespace-nowrap border-l border-sdc-border px-2 py-1.5 text-right text-xs font-medium text-sdc-navy ${zebra || "bg-white"}`}>
+                  <td className={`sticky right-[84px] z-10 whitespace-nowrap border-l border-sdc-border px-2 py-1.5 text-right text-xs font-medium text-sdc-navy ${zebraSticky}`}>
                     {currency(job.costQuoted)}
                   </td>
-                  <td className={`sticky right-0 z-10 whitespace-nowrap px-2 py-1.5 text-right text-xs text-sdc-gray-600 ${zebra || "bg-white"}`}>
+                  <td className={`sticky right-0 z-10 whitespace-nowrap px-2 py-1.5 text-right text-xs text-sdc-gray-600 ${zebraSticky}`}>
                     {currency(job.costActualHistorical)}
                   </td>
                 </tr>

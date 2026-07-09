@@ -19,7 +19,7 @@ import { SelectOnFocusInput } from "@/components/SelectOnFocusInput";
 import { MonthSelect } from "@/components/MonthSelect";
 
 const RATE_INPUT_CLASS =
-  "w-16 [appearance:textfield] border-none bg-transparent px-1.5 py-1 text-right text-xs outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none disabled:text-sdc-gray-400";
+  "w-12 [appearance:textfield] border-none bg-transparent px-1 py-1 text-right text-xs outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none disabled:text-sdc-gray-400";
 
 function wholeHours(n: number): string {
   return Math.round(n).toString();
@@ -509,9 +509,9 @@ export default async function StandardSheetPage({
       </div>
 
       <form action={saveRates}>
-        <div className="overflow-x-auto border border-sdc-border bg-white shadow-sm">
+        <div className="max-h-[calc(100vh-260px)] min-w-[480px] overflow-auto border border-sdc-border bg-white shadow-sm select-none styled-scrollbar">
           <table className={`w-full text-sm ${TABLE_GRID}`}>
-            <thead>
+            <thead className="sticky top-0 z-20 bg-white">
               <tr className={TABLE_HEADER_ROW}>
                 <th rowSpan={3} className="sticky left-0 z-10 w-10 min-w-10 bg-white px-2 py-3 text-center align-bottom">#</th>
                 <th rowSpan={3} className="sticky left-10 z-10 bg-white px-3 py-3 align-bottom">Job Id</th>
@@ -553,13 +553,13 @@ export default async function StandardSheetPage({
             <tbody>
               {rows.map((r, i) => (
                 <tr key={r.jobId} className={`hover:bg-sdc-blue-light/40 ${i % 2 === 1 ? "bg-sdc-gray-50/60" : ""}`}>
-                  <td className={`sticky left-0 z-10 w-10 min-w-10 px-2 py-2 text-center text-sdc-gray-400 ${i % 2 === 1 ? "bg-sdc-gray-50/60" : "bg-white"}`}>
+                  <td className={`sticky left-0 z-10 w-10 min-w-10 px-2 py-2 text-center text-sdc-gray-400 ${i % 2 === 1 ? "bg-sdc-gray-50" : "bg-white"}`}>
                     {i + 1}
                   </td>
-                  <td className={`sticky left-10 z-10 px-3 py-2 font-mono text-sdc-gray-400 ${i % 2 === 1 ? "bg-sdc-gray-50/60" : "bg-white"}`}>
+                  <td className={`sticky left-10 z-10 px-3 py-2 font-mono text-sdc-gray-400 ${i % 2 === 1 ? "bg-sdc-gray-50" : "bg-white"}`}>
                     {r.jobIdLabel}
                   </td>
-                  <td className="max-w-[220px] truncate px-3 py-2 font-medium text-sdc-navy" title={r.jobName}>
+                  <td className="min-w-[240px] whitespace-nowrap px-3 py-2 font-medium text-sdc-navy" title={r.jobName}>
                     {r.jobName}
                   </td>
                   <td className="border-l border-sdc-border px-3 py-2 text-sdc-gray-400">{r.status}</td>
@@ -597,13 +597,13 @@ export default async function StandardSheetPage({
                       className={RATE_INPUT_CLASS}
                     />
                   </td>
-                  <td className="border-l border-sdc-border bg-sdc-blue-light/10 px-2 py-2 text-right text-xs text-sdc-navy">{wholeHours(r.etcEngineering)}</td>
-                  <td className="bg-sdc-blue-light/10 px-2 py-2 text-right text-xs text-sdc-navy">{wholeHours(r.etcShop)}</td>
-                  <td className="bg-sdc-blue-light/10 px-2 py-2 text-right text-xs text-sdc-navy">{currency(r.etcParts)}</td>
-                  <td className="border-l border-sdc-border bg-sdc-gray-50 px-2 py-2 text-right text-xs text-sdc-navy">{currency(r.totalEtcDollars)}</td>
-                  <td className="bg-sdc-gray-50 px-2 py-2 text-right text-xs text-sdc-navy">{percent(r.percentOfTotal)}</td>
-                  <td className="border-l border-sdc-border bg-[#D6E4F0]/40 px-2 py-2 text-right text-xs text-sdc-navy">{currency(r.standardFeeEngineering)}</td>
-                  <td className="bg-[#D6E4F0]/40 px-2 py-2 text-right text-xs text-sdc-navy">{currency(r.standardFeeShop)}</td>
+                  <td className="border-l border-sdc-border bg-sdc-blue-light/10 px-1 py-2 text-right text-xs text-sdc-navy">{wholeHours(r.etcEngineering)}</td>
+                  <td className="bg-sdc-blue-light/10 px-1 py-2 text-right text-xs text-sdc-navy">{wholeHours(r.etcShop)}</td>
+                  <td className="bg-sdc-blue-light/10 px-1 py-2 text-right text-xs text-sdc-navy">{currency(r.etcParts)}</td>
+                  <td className="border-l border-sdc-border bg-sdc-gray-50 px-1 py-2 text-right text-xs text-sdc-navy">{currency(r.totalEtcDollars)}</td>
+                  <td className="bg-sdc-gray-50 px-1 py-2 text-right text-xs text-sdc-navy">{percent(r.percentOfTotal)}</td>
+                  <td className="border-l border-sdc-border bg-[#D6E4F0]/40 px-1 py-2 text-right text-xs text-sdc-navy">{currency(r.standardFeeEngineering)}</td>
+                  <td className="bg-[#D6E4F0]/40 px-1 py-2 text-right text-xs text-sdc-navy">{currency(r.standardFeeShop)}</td>
                   <td className="border-l border-sdc-border bg-[#F8D7DA]/40 px-2 py-2">
                     {editable ? (
                       <SelectOnFocusInput
@@ -621,7 +621,7 @@ export default async function StandardSheetPage({
                       </span>
                     )}
                   </td>
-                  <td className="border-l border-sdc-border bg-sdc-yellow-bg/60 px-2 py-2 text-right text-xs font-medium text-sdc-navy">
+                  <td className="border-l border-sdc-border bg-sdc-yellow-bg/60 px-1 py-2 text-right text-xs font-medium text-sdc-navy">
                     {currency(r.totalStandardFees)}
                   </td>
                   <td className="border-l border-sdc-border px-2 py-2">
@@ -631,10 +631,10 @@ export default async function StandardSheetPage({
                         name={`notes__${r.jobId}`}
                         defaultValue={r.notes}
                         aria-label={`Notes, ${r.jobName}`}
-                        className="w-32 border-none bg-transparent px-1.5 py-1 text-xs outline-none"
+                        className="w-48 border-none bg-transparent px-1.5 py-1 text-xs outline-none"
                       />
                     ) : (
-                      <span className="block w-32 truncate px-1.5 py-1 text-xs text-sdc-gray-500" title={r.notes}>
+                      <span className="block min-w-48 whitespace-nowrap px-1.5 py-1 text-xs text-sdc-gray-500" title={r.notes}>
                         {r.notes || "—"}
                       </span>
                     )}
@@ -655,14 +655,14 @@ export default async function StandardSheetPage({
                   </td>
                   <td className="border-l border-sdc-border px-2 py-2" colSpan={3}></td>
                   <td className="border-l border-sdc-border px-2 py-2" colSpan={3}></td>
-                  <td className="border-l border-sdc-border px-2 py-2 text-right text-xs text-sdc-navy">{currency(grand.totalEtcDollars)}</td>
-                  <td className="px-2 py-2 text-right text-xs text-sdc-navy">{percent(grand.percentOfTotal)}</td>
-                  <td className="border-l border-sdc-border px-2 py-2 text-right text-xs text-sdc-navy">{currency(grand.standardFeeEngineering)}</td>
-                  <td className="px-2 py-2 text-right text-xs text-sdc-navy">{currency(grand.standardFeeShop)}</td>
-                  <td className="border-l border-sdc-border px-2 py-2 text-right text-xs text-sdc-navy">
+                  <td className="border-l border-sdc-border px-1 py-2 text-right text-xs text-sdc-navy">{currency(grand.totalEtcDollars)}</td>
+                  <td className="px-1 py-2 text-right text-xs text-sdc-navy">{percent(grand.percentOfTotal)}</td>
+                  <td className="border-l border-sdc-border px-1 py-2 text-right text-xs text-sdc-navy">{currency(grand.standardFeeEngineering)}</td>
+                  <td className="px-1 py-2 text-right text-xs text-sdc-navy">{currency(grand.standardFeeShop)}</td>
+                  <td className="border-l border-sdc-border px-1 py-2 text-right text-xs text-sdc-navy">
                     {grand.contingencyAmount ? currency(grand.contingencyAmount) : "—"}
                   </td>
-                  <td className="border-l border-sdc-border px-2 py-2 text-right text-xs font-semibold text-sdc-navy">{currency(grand.totalStandardFees)}</td>
+                  <td className="border-l border-sdc-border px-1 py-2 text-right text-xs font-semibold text-sdc-navy">{currency(grand.totalStandardFees)}</td>
                   <td className="border-l border-sdc-border px-2 py-2"></td>
                 </tr>
               )}
@@ -687,9 +687,9 @@ export default async function StandardSheetPage({
           Standard Fees By Department — {month}
         </h2>
         <form action={savePools.bind(null, month)}>
-          <div className="overflow-x-auto border border-sdc-border bg-white shadow-sm">
+          <div className="max-h-[calc(100vh-260px)] min-w-[480px] overflow-auto border border-sdc-border bg-white shadow-sm select-none styled-scrollbar">
             <table className={`w-full text-sm ${TABLE_GRID}`}>
-              <thead>
+              <thead className="sticky top-0 z-20 bg-white">
                 <tr className={TABLE_HEADER_ROW}>
                   <th className="px-3 py-2">Billing Group</th>
                   <th className="px-3 py-2">Department</th>

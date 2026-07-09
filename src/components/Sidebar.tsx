@@ -150,7 +150,7 @@ const GROUPS: NavGroup[] = [
     items: [
       {
         href: "/quoted",
-        label: "Quoted",
+        label: "Projects",
         isActive: (p) => p === "/quoted",
         icon: (
           <Icon>

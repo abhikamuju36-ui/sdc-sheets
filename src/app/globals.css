@@ -85,3 +85,70 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans);
 }
+
+/* Number cells should read like Excel cells — plain values you click and
+ * type into, no spinner arrows appearing on hover/focus. Applies to every
+ * numeric input app-wide (grid cells and forms alike). */
+input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Excel-style cell editing for grid inputs: the input IS the cell — it
+ * fills the td completely, and focus draws a crisp inset cell border (like
+ * Excel's active-cell outline) instead of a floating rounded box. The
+ * attribute selectors give these rules enough specificity to override the
+ * inputs' own Tailwind sizing/rounding utilities without !important. */
+td:has(> input[type="number"]:not([disabled])) {
+  padding: 0;
+}
+td > input[type="number"] {
+  width: 100%;
+  height: 100%;
+  min-width: 3.5rem;
+  border-radius: 0;
+  border: none;
+  box-shadow: none;
+  padding: 0.25rem 0.5rem;
+  background: transparent;
+}
+td > input[type="number"]:focus {
+  outline: 2px solid var(--sdc-blue);
+  outline-offset: -2px;
+  background: #fff;
+  box-shadow: none;
+}
+
+/* Bounded table wrappers (data grids with sticky headers/columns) get their
+ * own scrollbars now instead of the whole page scrolling. Unstyled, these
+ * default to the OS's raw scrollbar — on Windows/Chromium that's a chunky
+ * gray track with a hard-edged corner square where the horizontal and
+ * vertical tracks meet, which reads as a stray box floating over the table.
+ * Themeing it to match the app's flat design removes that. */
+.styled-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--sdc-border) var(--sdc-gray-50);
+}
+.styled-scrollbar::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.styled-scrollbar::-webkit-scrollbar-track {
+  background: var(--sdc-gray-50);
+}
+.styled-scrollbar::-webkit-scrollbar-thumb {
+  background-color: var(--sdc-border);
+  border-radius: 6px;
+  border: 2px solid var(--sdc-gray-50);
+}
+.styled-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: var(--sdc-gray-400);
+}
+.styled-scrollbar::-webkit-scrollbar-corner {
+  background: var(--sdc-gray-50);
+}

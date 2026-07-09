@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { calcHoursLeft, suggestNewEtc, isMonthLocked, round2, prevMonth, nextMonth, isValidMonth } from "@/lib/etc";
 import { etcActiveJobFilter } from "@/lib/job-filters";
 import { syncActualHoursFromPowerBi, syncHoursWorkedFromPowerBi, syncPartsCostFromPowerBi } from "@/lib/sync-powerbi";
+import { syncEtcHistoryFromPowerBi } from "@/lib/sync-etc-history";
 import { ETC_TRACKED_CODES, PARTS_COST_SECTION } from "@/lib/sections";
 import { revalidatePath } from "next/cache";
 import { logAudit } from "@/lib/audit";
@@ -299,6 +300,22 @@ export async function syncPowerBiForEtc(month: string, _formData: FormData) {
   await syncHoursWorkedFromPowerBi(month);
   await syncPartsCostFromPowerBi(month);
   await logAudit({ action: "etc.syncPowerBiForEtc", entityType: "EtcMonth", entityId: month, summary: `Refreshed Power BI data for ETC month ${month}` });
+  revalidatePath("/etc");
+  revalidatePath("/");
+}
+
+// Re-pulls every Power BI-owned historical month from the "ETC Historical *"
+// measures so past months always match the source report. Months with real
+// in-app work (submitted / mid-edit / in progress) are never touched — the
+// app is the source of truth for those. Safe to run any time.
+export async function syncEtcHistory(_formData: FormData) {
+  const result = await syncEtcHistoryFromPowerBi();
+  await logAudit({
+    action: "etc.syncEtcHistory",
+    entityType: "EtcMonth",
+    summary: `Refreshed ${result.monthsRefreshed.length} historical ETC months from Power BI (${result.entriesWritten} rows)`,
+    metadata: result,
+  });
   revalidatePath("/etc");
   revalidatePath("/");
 }

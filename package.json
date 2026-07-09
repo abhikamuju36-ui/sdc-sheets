@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3010",
+    "dev:preview": "set NEXT_DIST_DIR=.next-preview&& next dev",
+    "dev:preview2": "set NEXT_DIST_DIR=.next-preview2&& next dev",
     "build": "next build",
     "start": "next start -p 3010",
     "lint": "eslint",

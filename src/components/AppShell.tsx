@@ -1,4 +1,5 @@
 import Sidebar from "@/components/Sidebar";
+import ExcelCellFocus from "@/components/ExcelCellFocus";
 
 export default function AppShell({
   children,
@@ -14,7 +15,8 @@ export default function AppShell({
   return (
     <div className="flex min-h-screen">
       <Sidebar userEmail={userEmail} role={role} signOutAction={signOutAction} />
-      <main className="flex-1 bg-background">{children}</main>
+      <main className="min-w-0 flex-1 bg-background">{children}</main>
+      <ExcelCellFocus />
     </div>
   );
 }

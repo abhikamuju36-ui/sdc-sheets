@@ -28,8 +28,13 @@ export const TABLE_ROW_HOVER = "transition-colors hover:bg-sdc-blue-light/40";
 // Full gridlines + tabular-width numerals — makes data tables read like a
 // spreadsheet grid (what finance/PM reviewers expect) instead of a generic
 // borderless admin-table list.
+// border-separate (not collapse) is load-bearing: collapsed borders belong to
+// the shared grid edges on the scrolling layer, so sticky cells pin in place
+// while their borders scroll away — ghost gridlines float over the frozen
+// columns/headers. With separate borders each cell owns its bottom+left edge
+// and they travel with the cell; border-spacing-0 keeps the grid seamless.
 export const TABLE_GRID =
-  "border-collapse [&_th]:border [&_th]:border-sdc-border [&_td]:border [&_td]:border-sdc-border-soft [&_td]:tabular-nums";
+  "border-separate border-spacing-0 [&_th]:border-b [&_th]:border-l [&_th]:border-sdc-border [&_td]:border-b [&_td]:border-l [&_td]:border-sdc-border-soft [&_td]:tabular-nums";
 
 // Table wrapper — sharp corners (not CARD_BASE's rounded-xl) so the grid's
 // straight gridlines run flush to the container edge, like a real spreadsheet.

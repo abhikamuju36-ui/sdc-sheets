@@ -6,6 +6,20 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 3010
+    },
+    {
+      "name": "sdc-etc-planner-dev-preview",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:preview"],
+      "port": 3010,
+      "autoPort": true
+    },
+    {
+      "name": "sdc-etc-planner-dev-preview2",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:preview2"],
+      "port": 3010,
+      "autoPort": true
     }
   ]
 }

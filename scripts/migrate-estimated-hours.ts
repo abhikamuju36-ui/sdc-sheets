@@ -37,7 +37,8 @@ const ACTUAL_HIST_OFFSET = 27 - 9;
 const ETC_OFFSET = 45 - 9;
 
 async function main() {
-  const wb = XLSX.readFile(path.join(SHEETS_DIR, "Project Planner Data Control.xlsx"), { cellFormula: false });
+  const file = process.argv[2] ?? path.join(SHEETS_DIR, "Project Planner Data Control.xlsx");
+  const wb = XLSX.readFile(file, { cellFormula: false });
   const ws = wb.Sheets["Estimated Hours"];
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null }) as unknown[][];
 
@@ -64,7 +65,7 @@ async function main() {
 
     const job = await prisma.job.upsert({
       where: { jobId },
-      update: { status, customer, type, startDate, completeDate, includeInTypeCalc, costQuoted, costActualHistorical },
+      update: { jobName, status, customer, type, startDate, completeDate, includeInTypeCalc, costQuoted, costActualHistorical },
       create: {
         jobId,
         jobName,

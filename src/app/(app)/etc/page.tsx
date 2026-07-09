@@ -3,18 +3,67 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { etcActiveJobFilter, compareJobIds } from "@/lib/job-filters";
 import { EtcDraftInput } from "@/components/EtcDraftInput";
-import { ETC_SECTIONS, ETC_PHASE_GROUPS, PARTS_COST_SECTION } from "@/lib/sections";
+import { ETC_SECTIONS, PARTS_COST_SECTION } from "@/lib/sections";
 import { calcHoursLeft, suggestNewEtc, isMonthLocked, nextMonth } from "@/lib/etc";
-import { submitMonth, reopenMonth, clearMonth, syncPowerBiForEtc } from "@/lib/etc-actions";
+import { submitMonth, reopenMonth, clearMonth, syncPowerBiForEtc, syncEtcHistory } from "@/lib/etc-actions";
 import { PageTitle } from "@/components/ui/Typography";
 import { StatusBadge } from "@/components/ui/StatusBadge";
-import { MonthSelect } from "@/components/MonthSelect";
+import { MonthYearSelect } from "@/components/MonthYearSelect";
 import { BUTTON_PRIMARY, BUTTON_SECONDARY, TABLE_HEADER_ROW, TABLE_GRID } from "@/components/ui/classnames";
 
 // Matches the real "Managers Fill Out" sheet's column shape exactly — every
-// department block (and the Total rollup) has these same 5 columns.
-const SUB_COLUMNS = ["Prior ETC", "Hours Worked", "Hours Left", "New ETC", "Diff"] as const;
+// department block has these same 5 columns; Parts Cost and the Total rollup
+// use the sheet's own label variants.
+const SUB_COLUMNS = ["Prior ETC", "Hours Worked Month", "Hours Left", "New ETC", "Diff"] as const;
 const PARTS_COST_SUB_COLUMNS = ["Prior ETC", "Money Spent Month", "Money Left", "New ETC", "Diff"] as const;
+const TOTAL_SUB_COLUMNS = ["Prior ETC", "Hours Worked", "Hours Left", "Total New ETC", "Diff"] as const;
+
+// The sheet's 5-level header above the column labels: Phase -> billing group
+// (Engineering/Shop) -> sub-group (ME / CE / General Engineering / dept
+// abbreviations) -> colored section cell. Counts are in sections (x5 columns
+// each) and must line up with ETC_SECTIONS' order. Display-only — internal
+// section names/phases in sections.ts are unchanged.
+const ETC_HEADER_PHASES = [
+  { label: "Complete Design and Build", sections: 9 },
+  { label: "Testing", sections: 2 },
+  { label: "Teardown and Install", sections: 2 },
+] as const;
+const ETC_HEADER_GROUPS = [
+  { label: "Engineering", sections: 7 },
+  { label: "Shop", sections: 2 },
+  { label: "Engineering", sections: 1 },
+  { label: "Shop", sections: 1 },
+  { label: "Engineering", sections: 1 },
+  { label: "Shop", sections: 1 },
+] as const;
+const ETC_HEADER_SUBGROUPS = [
+  { label: "ME", sections: 1 },
+  { label: "CE", sections: 2 },
+  { label: "General Engineering", sections: 4 },
+  { label: "Shop", sections: 2 },
+  { label: "ME & CE & GE", sections: 1 },
+  { label: "MB & EB", sections: 1 },
+  { label: "ME & CE & GE", sections: 1 },
+  { label: "MB & EB", sections: 1 },
+] as const;
+
+// Colored section-cell labels, exactly as the sheet prints them (no "CE"
+// prefixes; Testing/Teardown show "All"/"Total" rather than section names).
+const ETC_SECTION_DISPLAY: Record<string, string> = {
+  "10-211": "ME General",
+  "10-312": "Design and Drawings",
+  "10-313": "Software",
+  "10-515": "HMI",
+  "10-516": "Robot",
+  "10-517": "Vision",
+  "10-518": "Database and Device",
+  "10-411": "Mechanical Build",
+  "10-412": "Electrical Build",
+  "40-211": "All",
+  "40-411": "Total",
+  "50-211": "All",
+  "50-411": "Total",
+};
 
 // Department header colors, matching the real "Managers Fill Out" sheet's
 // column banding (ME = blue, CE = green, general engineering = teal, shop =
@@ -75,18 +124,18 @@ function wholeNum(n: number): string {
 // flat shade rather than the value-conditional colors used in the body.
 function subColHeaderBg(col: string): string {
   if (col === "Prior ETC") return "bg-[#5E91D3] text-white";
-  if (col === "Hours Worked" || col === "Money Spent Month") return HOURS_WORKED_BG;
+  if (col === "Hours Worked Month" || col === "Hours Worked" || col === "Money Spent Month") return HOURS_WORKED_BG;
   if (col === "Hours Left" || col === "Money Left") return HOURS_LEFT_BG;
-  if (col === "New ETC") return "bg-[#F2F2F2]";
+  if (col === "New ETC" || col === "Total New ETC") return "bg-[#F2F2F2]";
   return "";
 }
 
 // Same column-identity backgrounds, without a text-color opinion — for cells
 // (like the "—" empty-section placeholder) that set their own text color.
 function subColBodyBg(col: string): string {
-  if (col === "Hours Worked" || col === "Money Spent Month") return HOURS_WORKED_BG;
+  if (col === "Hours Worked Month" || col === "Hours Worked" || col === "Money Spent Month") return HOURS_WORKED_BG;
   if (col === "Hours Left" || col === "Money Left") return HOURS_LEFT_BG;
-  if (col === "New ETC") return "bg-[#F2F2F2]";
+  if (col === "New ETC" || col === "Total New ETC") return "bg-[#F2F2F2]";
   if (col === "Diff") return "bg-white";
   return "";
 }
@@ -128,9 +177,19 @@ export default async function MonthlyEtcPage({
   const latestMonth = distinctMonths[0]?.month;
   const nextStartable = latestMonth && !inProgressSet.has(latestMonth) ? nextMonth(latestMonth) : undefined;
 
+  // Which jobs the grid shows depends on whether the month is history:
+  // - A locked month is a frozen snapshot — show exactly the jobs that have
+  //   entries in it (Power BI parity), regardless of what their status is
+  //   TODAY. Filtering by current status hides every job completed since,
+  //   which made historical months show far fewer jobs than the source report.
+  // - An in-progress (or not-yet-started) month keeps etcActiveJobFilter —
+  //   the same universe seeding/pruning/submission operate on, which must
+  //   stay in lockstep with the grid.
+  const monthIsLocked = distinctMonths.some((m) => m.month === month) && !inProgressSet.has(month);
+
   const [jobs, session, lastPowerBiSync, hoursActualFreshness] = await Promise.all([
     prisma.job.findMany({
-      where: etcActiveJobFilter,
+      where: monthIsLocked ? { etcEntries: { some: { month } } } : etcActiveJobFilter,
       include: { etcEntries: { where: { month } } },
     }),
     auth(),
@@ -158,28 +217,36 @@ export default async function MonthlyEtcPage({
     <div className="w-full p-8">
       <PageTitle className="mb-1">Monthly ETC</PageTitle>
       <p className="mb-4 text-sm text-sdc-gray-600">
-        {`${jobs.length} active job${jobs.length === 1 ? "" : "s"} — replaces the "Managers Fill Out" sheet.`}
+        {`${jobs.length} ${monthIsLocked ? "job" : "active job"}${jobs.length === 1 ? "" : "s"} — replaces the "Managers Fill Out" sheet.`}
       </p>
 
-      {/* One toolbar, buttons in workflow order: Refresh → enter/confirm → Submit and Lock. */}
+      {/* One toolbar: pick the month/year, Run Report pulls everything from
+          Power BI for it, then enter/confirm and Submit and Lock. */}
       <div className="mb-3 flex flex-wrap items-center gap-3">
+        <span className="text-xs font-medium text-sdc-gray-500">Report for:</span>
+        <MonthYearSelect
+          months={distinctMonths.map((m) => m.month)}
+          current={month}
+          lockedMonths={lockedMonthList}
+          nextStartable={nextStartable}
+        />
         {!locked && (
           <form action={syncPowerBiForEtc.bind(null, month)}>
-            <button type="submit" className={BUTTON_SECONDARY}>
-              1. Refresh Data
+            <button type="submit" className={BUTTON_PRIMARY}>
+              Run Report
             </button>
           </form>
         )}
         {started && !locked && (
           <form action={clearMonth.bind(null, month)}>
             <button type="submit" className={BUTTON_SECONDARY}>
-              2. Clear ETC
+              Clear ETC
             </button>
           </form>
         )}
         {started && !locked && jobs.length > 0 && (
-          <button type="submit" form="etc-month-form" className={BUTTON_PRIMARY}>
-            3. Monthly ETC Submit and Lock
+          <button type="submit" form="etc-month-form" className={BUTTON_SECONDARY}>
+            Submit and Lock
           </button>
         )}
         {locked && role === "ADMIN" && (
@@ -189,6 +256,11 @@ export default async function MonthlyEtcPage({
             </button>
           </form>
         )}
+        <form action={syncEtcHistory} title="Re-pull all past months from Power BI's ETC Historical measures. Months submitted in this app are never overwritten.">
+          <button type="submit" className={BUTTON_SECONDARY}>
+            Sync History
+          </button>
+        </form>
         <StatusBadge variant={!started ? "notStarted" : locked ? "locked" : "needsReview"}>
           {!started ? "Not started" : locked ? "Locked (submitted)" : `In progress — ${needsReviewCount} pending`}
         </StatusBadge>
@@ -199,86 +271,96 @@ export default async function MonthlyEtcPage({
           {hoursActualFreshness?.refreshedThrough && (
             <> · Hours Refreshed Thru: {hoursActualFreshness.refreshedThrough.toISOString().slice(0, 10)}</>
           )}
+          {distinctMonths.length === 0 && <> · no ETC history yet</>}
         </span>
-      </div>
-
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <span className="text-xs font-medium text-sdc-gray-500">Month:</span>
-        <MonthSelect
-          months={distinctMonths.map((m) => m.month)}
-          current={month}
-          lockedMonths={lockedMonthList}
-          nextStartable={nextStartable}
-        />
-        {distinctMonths.length === 0 && <span className="text-xs text-sdc-gray-400">no ETC history yet</span>}
       </div>
 
       <p className="mb-4 text-xs text-sdc-gray-400">
         {!started
-          ? `"Refresh Data" starts ${month}: it seeds the job rows and pulls the latest hours from Power BI, just like the sheet.`
+          ? `"Run Report" starts ${month}: it seeds the job rows and pulls the latest hours from Power BI, just like the sheet.`
           : locked
             ? `${month} is submitted and locked — these numbers are frozen exactly as submitted. Pick a month above to view any past submission.`
-            : `Enter Hours Worked, confirm or override each New ETC (suggestion shown in yellow), then Submit and Lock. "Clear ETC" resets New ETC values back to the suggestion (Hours Worked untouched).`}
+            : `"Run Report" pulls the latest numbers from Power BI for the selected month. Enter Hours Worked, confirm or override each New ETC (suggestion shown in yellow), then Submit and Lock. "Clear ETC" resets New ETC values back to the suggestion (Hours Worked untouched).`}
       </p>
 
       {started && (
         <form id="etc-month-form" action={submitMonth.bind(null, month)}>
-          <div className="overflow-x-auto border border-sdc-border bg-white shadow-sm">
+          <div className="max-h-[calc(100vh-260px)] min-w-[480px] overflow-auto border border-sdc-border bg-white shadow-sm select-none styled-scrollbar">
             <table className={`w-full text-sm ${TABLE_GRID}`}>
-              <thead>
+              <thead className="sticky top-0 z-20 bg-sdc-gray-100">
                 <tr className={TABLE_HEADER_ROW}>
-                  <th rowSpan={3} className="sticky left-0 z-10 w-10 min-w-10 bg-sdc-gray-100 px-2 py-3 text-center align-bottom">
+                  <th rowSpan={5} className="sticky left-0 z-10 w-10 min-w-10 bg-sdc-gray-100 px-2 py-3 text-center align-bottom">
                     #
                   </th>
-                  <th rowSpan={3} className="sticky left-10 z-10 w-20 min-w-20 bg-sdc-gray-100 px-3 py-3 align-bottom">
+                  <th rowSpan={5} className="sticky left-10 z-10 w-20 min-w-20 bg-sdc-gray-100 px-3 py-3 align-bottom">
                     Job Id
                   </th>
-                  <th rowSpan={3} className="sticky left-[120px] z-10 bg-sdc-gray-100 px-3 py-3 align-bottom">Job Name</th>
-                  {ETC_PHASE_GROUPS.map((g, i) => (
-                    <th
-                      key={g.phase + i}
-                      colSpan={g.count * SUB_COLUMNS.length}
-                      className="border-l border-sdc-border px-3 py-2 text-center"
-                    >
-                      {g.phase}
+                  <th rowSpan={5} className="sticky left-[120px] z-10 bg-sdc-gray-100 px-3 py-3 align-bottom">Job Name</th>
+                  {ETC_HEADER_PHASES.map((p, i) => (
+                    <th key={p.label + i} colSpan={p.sections * SUB_COLUMNS.length} className="border-l border-sdc-border px-3 py-1.5 text-center">
+                      {p.label}
                     </th>
                   ))}
-                  <th colSpan={PARTS_COST_SUB_COLUMNS.length} className="border-l border-sdc-border bg-sdc-gray-100 px-3 py-2 text-center text-sdc-gray-700">
+                  <th colSpan={PARTS_COST_SUB_COLUMNS.length} className="border-l border-sdc-border bg-sdc-gray-100 px-3 py-1.5 text-center text-sdc-gray-700">
                     Parts Cost
                   </th>
-                  <th colSpan={2 * SUB_COLUMNS.length} className="border-l border-sdc-border bg-sdc-blue-light/40 px-3 py-2 text-center text-sdc-blue-dark">
+                  <th colSpan={2 * TOTAL_SUB_COLUMNS.length} className="border-l border-sdc-border bg-[#FDFDE3] px-3 py-1.5 text-center text-sdc-navy">
                     Total (New ETC)
                   </th>
                 </tr>
+                {/* Billing-group row: Engineering / Shop per phase, like the sheet. */}
+                <tr className={TABLE_HEADER_ROW}>
+                  {ETC_HEADER_GROUPS.map((g, i) => (
+                    <th key={g.label + i} colSpan={g.sections * SUB_COLUMNS.length} className="border-l border-sdc-border px-2 py-1 text-center font-medium">
+                      {g.label}
+                    </th>
+                  ))}
+                  {/* Parts Cost has no Engineering/Shop split — one green Total
+                      block spanning down to the column-label row, as printed. */}
+                  <th rowSpan={3} colSpan={PARTS_COST_SUB_COLUMNS.length} className="border-l border-sdc-border bg-[#00B050] px-2 py-1 text-center text-white">
+                    Total
+                  </th>
+                  <th colSpan={TOTAL_SUB_COLUMNS.length} className="border-l border-sdc-border bg-[#FDFDE3] px-2 py-1 text-center font-medium text-sdc-navy">
+                    Engineering
+                  </th>
+                  <th colSpan={TOTAL_SUB_COLUMNS.length} className="border-l border-sdc-border bg-[#FDFDE3] px-2 py-1 text-center font-medium text-sdc-navy">
+                    Shop
+                  </th>
+                </tr>
+                {/* Sub-group row: ME / CE / General Engineering / dept abbreviations. */}
+                <tr className={TABLE_HEADER_ROW}>
+                  {ETC_HEADER_SUBGROUPS.map((g, i) => (
+                    <th key={g.label + i} colSpan={g.sections * SUB_COLUMNS.length} className="border-l border-sdc-border px-2 py-1 text-center font-medium">
+                      {g.label}
+                    </th>
+                  ))}
+                  <th colSpan={TOTAL_SUB_COLUMNS.length} className="border-l border-sdc-border bg-[#FDFDE3] px-2 py-1 text-center font-medium text-sdc-navy">
+                    ME &amp; CE &amp; GE
+                  </th>
+                  <th colSpan={TOTAL_SUB_COLUMNS.length} className="border-l border-sdc-border bg-[#FDFDE3] px-2 py-1 text-center font-medium text-sdc-navy">
+                    MB &amp; EB
+                  </th>
+                </tr>
+                {/* Colored section row, labels exactly as the sheet prints them. */}
                 <tr className={TABLE_HEADER_ROW}>
                   {ETC_SECTIONS.map((s) => {
                     const color = SECTION_HEADER_COLOR[s.code];
                     return (
                       <th
                         key={s.code}
-                        title={s.code}
+                        title={`${s.name} (${s.code})`}
                         colSpan={SUB_COLUMNS.length}
                         className={`border-l border-sdc-border px-2 py-1 text-center ${color ?? ""}`}
                       >
-                        {s.name}
-                        <span
-                          className={`block font-mono text-[10px] font-normal normal-case tracking-normal ${
-                            color ? "text-sdc-navy/60" : "text-sdc-gray-400"
-                          }`}
-                        >
-                          {s.code}
-                        </span>
+                        {ETC_SECTION_DISPLAY[s.code] ?? s.name}
                       </th>
                     );
                   })}
-                  <th colSpan={PARTS_COST_SUB_COLUMNS.length} className="border-l border-sdc-border bg-sdc-gray-100 px-2 py-1 text-center text-sdc-gray-700">
-                    Total
+                  <th colSpan={TOTAL_SUB_COLUMNS.length} className="border-l border-sdc-border bg-[#D1ECF9] px-2 py-1 text-center text-sdc-navy">
+                    All
                   </th>
-                  <th colSpan={SUB_COLUMNS.length} className="border-l border-sdc-border bg-sdc-blue-light/40 px-2 py-1 text-center text-sdc-blue-dark">
-                    Engineering
-                  </th>
-                  <th colSpan={SUB_COLUMNS.length} className="border-l border-sdc-border bg-sdc-blue-light/40 px-2 py-1 text-center text-sdc-blue-dark">
-                    Shop
+                  <th colSpan={TOTAL_SUB_COLUMNS.length} className="border-l border-sdc-border bg-[#E6AC89] px-2 py-1 text-center text-sdc-navy">
+                    All
                   </th>
                 </tr>
                 <tr className={TABLE_HEADER_ROW}>
@@ -286,7 +368,7 @@ export default async function MonthlyEtcPage({
                     SUB_COLUMNS.map((col) => (
                       <th
                         key={`${s.code}-${col}`}
-                        className={`border-l border-sdc-border px-2 py-1.5 text-right text-[10px] ${
+                        className={`border-l border-sdc-border px-1 py-1.5 text-right text-[10px] ${
                           subColHeaderBg(col) || SECTION_HEADER_COLOR_LIGHT[s.code] || ""
                         }`}
                       >
@@ -297,7 +379,7 @@ export default async function MonthlyEtcPage({
                   {PARTS_COST_SUB_COLUMNS.map((col) => (
                     <th
                       key={`parts-cost-${col}`}
-                      className={`border-l border-sdc-border px-2 py-1.5 text-right text-[10px] ${
+                      className={`border-l border-sdc-border px-1 py-1.5 text-right text-[10px] ${
                         subColHeaderBg(col) || "bg-sdc-gray-100 text-sdc-gray-700"
                       }`}
                     >
@@ -305,11 +387,11 @@ export default async function MonthlyEtcPage({
                     </th>
                   ))}
                   {(["Engineering", "Shop"] as const).map((group) =>
-                    SUB_COLUMNS.map((col) => (
+                    TOTAL_SUB_COLUMNS.map((col) => (
                       <th
                         key={`${group}-${col}`}
-                        className={`border-l border-sdc-border px-2 py-1.5 text-right text-[10px] ${
-                          subColHeaderBg(col) || "bg-sdc-blue-light/40 text-sdc-blue-dark"
+                        className={`border-l border-sdc-border px-1 py-1.5 text-right text-[10px] ${
+                          subColHeaderBg(col) || "bg-[#FDFDE3] text-sdc-navy"
                         }`}
                       >
                         {col}
@@ -322,6 +404,9 @@ export default async function MonthlyEtcPage({
                 {jobs.map((job, jobIndex) => {
                   const entryByCode = new Map(job.etcEntries.map((e) => [e.section, e]));
                   const zebra = jobIndex % 2 === 1 ? "bg-sdc-gray-50/60" : "";
+                  // Sticky columns need a fully opaque background — the translucent
+                  // zebra tint above lets scrolled-under columns bleed through them.
+                  const zebraSticky = jobIndex % 2 === 1 ? "bg-sdc-gray-50" : "bg-white";
 
                   // Effective New ETC: confirmed value once submitted; before
                   // that, the manager's autosaved draft if any, else the
@@ -346,10 +431,10 @@ export default async function MonthlyEtcPage({
 
                   return (
                     <tr key={job.id} className={`hover:bg-sdc-blue-light/40 ${zebra}`}>
-                      <td className={`sticky left-0 z-10 w-10 min-w-10 px-2 py-1 text-center text-sdc-gray-400 ${zebra || "bg-white"}`}>{jobIndex + 1}</td>
-                      <td className={`sticky left-10 z-10 w-20 min-w-20 px-3 py-1 font-mono text-sdc-gray-400 ${zebra || "bg-white"}`}>{job.jobId}</td>
+                      <td className={`sticky left-0 z-10 w-10 min-w-10 px-2 py-1 text-center text-sdc-gray-400 ${zebraSticky}`}>{jobIndex + 1}</td>
+                      <td className={`sticky left-10 z-10 w-20 min-w-20 px-3 py-1 font-mono text-sdc-gray-400 ${zebraSticky}`}>{job.jobId}</td>
                       <td
-                        className={`sticky left-[120px] z-10 max-w-56 truncate whitespace-nowrap px-3 py-1 font-medium text-sdc-navy ${zebra || "bg-white"}`}
+                        className={`sticky left-[120px] z-10 min-w-[260px] whitespace-nowrap px-3 py-1 font-medium text-sdc-navy ${zebraSticky}`}
                         title={job.jobName}
                       >
                         {job.jobName}
@@ -385,10 +470,10 @@ export default async function MonthlyEtcPage({
 
                         return (
                           <Fragment key={s.code}>
-                            <td className="border-l border-sdc-border bg-[#5E91D3] px-2 py-1 text-right text-xs text-white">
+                            <td className="border-l border-sdc-border bg-[#5E91D3] px-1 py-1 text-right text-xs text-white">
                               {wholeNum(prior)}
                             </td>
-                            <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-2 py-1`}>
+                            <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1`}>
                               <input
                                 type="number"
                                 step="0.01"
@@ -397,13 +482,13 @@ export default async function MonthlyEtcPage({
                                 defaultValue={wholeNum(worked)}
                                 disabled={locked}
                                 aria-label={`Hours worked, ${job.jobName}, ${s.name}`}
-                                className="w-16 rounded-md border border-transparent bg-transparent px-1.5 py-1 text-right text-xs outline-none focus:border-sdc-blue focus:bg-white focus:shadow-sm disabled:text-sdc-gray-400"
+                                className="w-12 rounded-md border border-transparent bg-transparent px-1.5 py-1 text-right text-xs outline-none focus:border-sdc-blue focus:bg-white focus:shadow-sm disabled:text-sdc-gray-400"
                               />
                             </td>
-                            <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-2 py-1 text-right text-xs text-sdc-gray-500`}>
+                            <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-1 py-1 text-right text-xs text-sdc-gray-500`}>
                               {wholeNum(hoursLeft)}
                             </td>
-                            <td className={`border-l border-sdc-border ${newEtcBg(decided)} px-2 py-1`}>
+                            <td className={`border-l border-sdc-border ${newEtcBg(decided)} px-1 py-1`}>
                               {/* No hours worked -> carry-forward is deterministic, safe to auto-fill.
                                   Hours worked > 0 -> a manager's judgment call, not auto-filled;
                                   flagged yellow so it's obviously not done yet. Typed values
@@ -415,12 +500,12 @@ export default async function MonthlyEtcPage({
                                 placeholder={worked === 0 || draft != null ? undefined : wholeNum(suggested)}
                                 disabled={locked}
                                 ariaLabel={`New ETC override, ${job.jobName}, ${s.name}`}
-                                className={`w-16 [appearance:textfield] rounded-md border-none bg-transparent px-1.5 py-1 text-right text-xs outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none focus:bg-white focus:shadow-sm ${
+                                className={`w-12 [appearance:textfield] rounded-md border-none bg-transparent px-1.5 py-1 text-right text-xs outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none focus:bg-white focus:shadow-sm ${
                                   decided ? "text-sdc-gray-600" : "text-sdc-yellow-text placeholder:text-sdc-yellow-text/60"
                                 }`}
                               />
                             </td>
-                            <td className={`border-l border-sdc-border ${diffBg(diff)} px-2 py-1 text-right text-xs text-sdc-gray-700`}>
+                            <td className={`border-l border-sdc-border ${diffBg(diff)} px-1 py-1 text-right text-xs text-sdc-gray-700`}>
                               {wholeNum(diff)}
                             </td>
                           </Fragment>
@@ -455,21 +540,21 @@ export default async function MonthlyEtcPage({
 
                         return (
                           <Fragment key="parts-cost">
-                            <td className="border-l border-sdc-border bg-[#5E91D3] px-2 py-1 text-right text-xs text-white">
+                            <td className="border-l border-sdc-border bg-[#5E91D3] px-1 py-1 text-right text-xs text-white">
                               {currency(prior)}
                             </td>
-                            <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-2 py-1`}>
+                            <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1`}>
                               {/* Not manager-editable — always Power BI's actual, passed through as a
                                   hidden field so submitMonth's generic per-entry loop still works. */}
                               <input type="hidden" name={`hoursWorked__${partsCostEntry.id}`} value={spent} />
-                              <span className="block w-20 truncate text-right text-xs text-sdc-gray-600" title={currency(spent)}>
+                              <span className="block w-16 truncate text-right text-xs text-sdc-gray-600" title={currency(spent)}>
                                 {currency(spent)}
                               </span>
                             </td>
-                            <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-2 py-1 text-right text-xs text-sdc-gray-500`}>
+                            <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-1 py-1 text-right text-xs text-sdc-gray-500`}>
                               {currency(moneyLeft)}
                             </td>
-                            <td className={`border-l border-sdc-border ${newEtcBg(decidedCost)} px-2 py-1`}>
+                            <td className={`border-l border-sdc-border ${newEtcBg(decidedCost)} px-1 py-1`}>
                               <EtcDraftInput
                                 entryId={partsCostEntry.id}
                                 name={`newEtcOverride__${partsCostEntry.id}`}
@@ -477,12 +562,12 @@ export default async function MonthlyEtcPage({
                                 placeholder={spent === 0 || draftCost != null ? undefined : wholeNum(suggestedCost)}
                                 disabled={locked}
                                 ariaLabel={`New ETC cost override, ${job.jobName}, Parts Cost`}
-                                className={`w-20 [appearance:textfield] rounded-md border-none bg-transparent px-1.5 py-1 text-right text-xs outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none focus:bg-white focus:shadow-sm ${
+                                className={`w-16 [appearance:textfield] rounded-md border-none bg-transparent px-1.5 py-1 text-right text-xs outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none focus:bg-white focus:shadow-sm ${
                                   decidedCost ? "text-sdc-gray-600" : "text-sdc-yellow-text placeholder:text-sdc-yellow-text/60"
                                 }`}
                               />
                             </td>
-                            <td className={`border-l border-sdc-border ${diffBg(diffCost)} px-2 py-1 text-right text-xs text-sdc-gray-700`}>
+                            <td className={`border-l border-sdc-border ${diffBg(diffCost)} px-1 py-1 text-right text-xs text-sdc-gray-700`}>
                               {currency(diffCost)}
                             </td>
                           </Fragment>
@@ -496,19 +581,19 @@ export default async function MonthlyEtcPage({
                         groupGrandTotals[group].newEtc += totals[group].newEtc;
                         return (
                           <Fragment key={group}>
-                            <td className="border-l border-sdc-border bg-[#5E91D3] px-2 py-1 text-right text-xs text-white">
+                            <td className="border-l border-sdc-border bg-[#5E91D3] px-1 py-1 text-right text-xs text-white">
                               {wholeNum(totals[group].prior)}
                             </td>
-                            <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-2 py-1 text-right text-xs text-sdc-gray-500`}>
+                            <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1 text-right text-xs text-sdc-gray-500`}>
                               {wholeNum(totals[group].worked)}
                             </td>
-                            <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-2 py-1 text-right text-xs text-sdc-gray-500`}>
+                            <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-1 py-1 text-right text-xs text-sdc-gray-500`}>
                               {wholeNum(hoursLeft)}
                             </td>
-                            <td className={`border-l border-sdc-border ${newEtcBg(true)} px-2 py-1 text-right text-xs font-medium text-sdc-navy`}>
+                            <td className={`border-l border-sdc-border ${newEtcBg(true)} px-1 py-1 text-right text-xs font-medium text-sdc-navy`}>
                               {wholeNum(totals[group].newEtc)}
                             </td>
-                            <td className={`border-l border-sdc-border ${diffBg(diff)} px-2 py-1 text-right text-xs text-sdc-gray-700`}>
+                            <td className={`border-l border-sdc-border ${diffBg(diff)} px-1 py-1 text-right text-xs text-sdc-gray-700`}>
                               {wholeNum(diff)}
                             </td>
                           </Fragment>
@@ -538,11 +623,11 @@ export default async function MonthlyEtcPage({
                       const diff = hoursLeft - t.newEtc;
                       return (
                         <Fragment key={s.code}>
-                          <td className="border-l border-sdc-border bg-[#5E91D3] px-2 py-1 text-right text-xs text-white">{wholeNum(t.prior)}</td>
-                          <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-2 py-1 text-right text-xs text-sdc-navy`}>{wholeNum(t.worked)}</td>
-                          <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-2 py-1 text-right text-xs text-sdc-navy`}>{wholeNum(hoursLeft)}</td>
-                          <td className={`border-l border-sdc-border ${newEtcBg(true)} px-2 py-1 text-right text-xs text-sdc-navy`}>{wholeNum(t.newEtc)}</td>
-                          <td className={`border-l border-sdc-border ${diffBg(diff)} px-2 py-1 text-right text-xs text-sdc-gray-700`}>{wholeNum(diff)}</td>
+                          <td className="border-l border-sdc-border bg-[#5E91D3] px-1 py-1 text-right text-xs text-white">{wholeNum(t.prior)}</td>
+                          <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1 text-right text-xs text-sdc-navy`}>{wholeNum(t.worked)}</td>
+                          <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-1 py-1 text-right text-xs text-sdc-navy`}>{wholeNum(hoursLeft)}</td>
+                          <td className={`border-l border-sdc-border ${newEtcBg(true)} px-1 py-1 text-right text-xs text-sdc-navy`}>{wholeNum(t.newEtc)}</td>
+                          <td className={`border-l border-sdc-border ${diffBg(diff)} px-1 py-1 text-right text-xs text-sdc-gray-700`}>{wholeNum(diff)}</td>
                         </Fragment>
                       );
                     })}
@@ -552,11 +637,11 @@ export default async function MonthlyEtcPage({
                       const diffCost = moneyLeft - t.newEtc;
                       return (
                         <Fragment key="parts-cost-total">
-                          <td className="border-l border-sdc-border bg-[#5E91D3] px-2 py-1 text-right text-xs text-white">{currency(t.prior)}</td>
-                          <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-2 py-1 text-right text-xs text-sdc-navy`}>{currency(t.worked)}</td>
-                          <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-2 py-1 text-right text-xs text-sdc-navy`}>{currency(moneyLeft)}</td>
-                          <td className={`border-l border-sdc-border ${newEtcBg(true)} px-2 py-1 text-right text-xs text-sdc-navy`}>{currency(t.newEtc)}</td>
-                          <td className={`border-l border-sdc-border ${diffBg(diffCost)} px-2 py-1 text-right text-xs text-sdc-gray-700`}>{currency(diffCost)}</td>
+                          <td className="border-l border-sdc-border bg-[#5E91D3] px-1 py-1 text-right text-xs text-white">{currency(t.prior)}</td>
+                          <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1 text-right text-xs text-sdc-navy`}>{currency(t.worked)}</td>
+                          <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-1 py-1 text-right text-xs text-sdc-navy`}>{currency(moneyLeft)}</td>
+                          <td className={`border-l border-sdc-border ${newEtcBg(true)} px-1 py-1 text-right text-xs text-sdc-navy`}>{currency(t.newEtc)}</td>
+                          <td className={`border-l border-sdc-border ${diffBg(diffCost)} px-1 py-1 text-right text-xs text-sdc-gray-700`}>{currency(diffCost)}</td>
                         </Fragment>
                       );
                     })()}
@@ -566,11 +651,11 @@ export default async function MonthlyEtcPage({
                       const diff = hoursLeft - t.newEtc;
                       return (
                         <Fragment key={group}>
-                          <td className="border-l border-sdc-border bg-[#5E91D3] px-2 py-1 text-right text-xs text-white">{wholeNum(t.prior)}</td>
-                          <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-2 py-1 text-right text-xs text-sdc-blue-dark`}>{wholeNum(t.worked)}</td>
-                          <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-2 py-1 text-right text-xs text-sdc-blue-dark`}>{wholeNum(hoursLeft)}</td>
-                          <td className={`border-l border-sdc-border ${newEtcBg(true)} px-2 py-1 text-right text-xs text-sdc-blue-dark`}>{wholeNum(t.newEtc)}</td>
-                          <td className={`border-l border-sdc-border ${diffBg(diff)} px-2 py-1 text-right text-xs text-sdc-gray-700`}>{wholeNum(diff)}</td>
+                          <td className="border-l border-sdc-border bg-[#5E91D3] px-1 py-1 text-right text-xs text-white">{wholeNum(t.prior)}</td>
+                          <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1 text-right text-xs text-sdc-blue-dark`}>{wholeNum(t.worked)}</td>
+                          <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-1 py-1 text-right text-xs text-sdc-blue-dark`}>{wholeNum(hoursLeft)}</td>
+                          <td className={`border-l border-sdc-border ${newEtcBg(true)} px-1 py-1 text-right text-xs text-sdc-blue-dark`}>{wholeNum(t.newEtc)}</td>
+                          <td className={`border-l border-sdc-border ${diffBg(diff)} px-1 py-1 text-right text-xs text-sdc-gray-700`}>{wholeNum(diff)}</td>
                         </Fragment>
                       );
                     })}
