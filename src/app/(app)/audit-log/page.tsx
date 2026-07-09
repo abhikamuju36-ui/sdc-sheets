@@ -88,6 +88,7 @@ export default async function AuditLogPage({
         <table className={`w-full text-sm ${TABLE_GRID}`}>
           <thead>
             <tr className={TABLE_HEADER_ROW}>
+              <th className="w-10 px-2 py-3 text-center">#</th>
               <th className="px-4 py-3">When</th>
               <th className="px-3 py-3">User</th>
               <th className="px-3 py-3">Action</th>
@@ -98,6 +99,7 @@ export default async function AuditLogPage({
           <tbody>
             {logs.map((log, i) => (
               <tr key={log.id} className={`${TABLE_ROW_HOVER} align-top ${i % 2 === 1 ? "bg-sdc-gray-50/60" : ""}`}>
+                <td className="px-2 py-2 text-center text-xs text-sdc-gray-400">{(page - 1) * PAGE_SIZE + i + 1}</td>
                 <td className="whitespace-nowrap px-4 py-2 text-xs text-sdc-gray-500">
                   {log.createdAt.toISOString().slice(0, 16).replace("T", " ")}
                 </td>
@@ -121,7 +123,7 @@ export default async function AuditLogPage({
             ))}
             {logs.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-5 text-sdc-gray-400">
+                <td colSpan={6} className="px-4 py-5 text-sdc-gray-400">
                   No audit log entries match this filter.
                 </td>
               </tr>

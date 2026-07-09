@@ -227,10 +227,13 @@ export default async function MonthlyEtcPage({
             <table className={`w-full text-sm ${TABLE_GRID}`}>
               <thead>
                 <tr className={TABLE_HEADER_ROW}>
-                  <th rowSpan={3} className="sticky left-0 z-10 w-20 min-w-20 bg-sdc-gray-100 px-3 py-3 align-bottom">
+                  <th rowSpan={3} className="sticky left-0 z-10 w-10 min-w-10 bg-sdc-gray-100 px-2 py-3 text-center align-bottom">
+                    #
+                  </th>
+                  <th rowSpan={3} className="sticky left-10 z-10 w-20 min-w-20 bg-sdc-gray-100 px-3 py-3 align-bottom">
                     Job Id
                   </th>
-                  <th rowSpan={3} className="sticky left-20 z-10 bg-sdc-gray-100 px-3 py-3 align-bottom">Job Name</th>
+                  <th rowSpan={3} className="sticky left-[120px] z-10 bg-sdc-gray-100 px-3 py-3 align-bottom">Job Name</th>
                   {ETC_PHASE_GROUPS.map((g, i) => (
                     <th
                       key={g.phase + i}
@@ -343,9 +346,10 @@ export default async function MonthlyEtcPage({
 
                   return (
                     <tr key={job.id} className={`hover:bg-sdc-blue-light/40 ${zebra}`}>
-                      <td className={`sticky left-0 z-10 w-20 min-w-20 px-3 py-1 font-mono text-sdc-gray-400 ${zebra || "bg-white"}`}>{job.jobId}</td>
+                      <td className={`sticky left-0 z-10 w-10 min-w-10 px-2 py-1 text-center text-sdc-gray-400 ${zebra || "bg-white"}`}>{jobIndex + 1}</td>
+                      <td className={`sticky left-10 z-10 w-20 min-w-20 px-3 py-1 font-mono text-sdc-gray-400 ${zebra || "bg-white"}`}>{job.jobId}</td>
                       <td
-                        className={`sticky left-20 z-10 max-w-56 truncate whitespace-nowrap px-3 py-1 font-medium text-sdc-navy ${zebra || "bg-white"}`}
+                        className={`sticky left-[120px] z-10 max-w-56 truncate whitespace-nowrap px-3 py-1 font-medium text-sdc-navy ${zebra || "bg-white"}`}
                         title={job.jobName}
                       >
                         {job.jobName}
@@ -516,7 +520,7 @@ export default async function MonthlyEtcPage({
                 {jobs.length === 0 && (
                   <tr>
                     <td
-                      colSpan={2 + (ETC_SECTIONS.length + 2) * SUB_COLUMNS.length + PARTS_COST_SUB_COLUMNS.length}
+                      colSpan={3 + (ETC_SECTIONS.length + 2) * SUB_COLUMNS.length + PARTS_COST_SUB_COLUMNS.length}
                       className="px-4 py-5 text-sdc-gray-400"
                     >
                       No active jobs found.
@@ -525,7 +529,7 @@ export default async function MonthlyEtcPage({
                 )}
                 {jobs.length > 0 && (
                   <tr className="border-t-2 border-sdc-navy bg-sdc-gray-100 font-medium">
-                    <td className="sticky left-0 z-10 bg-sdc-gray-100 px-3 py-2" colSpan={2}>
+                    <td className="sticky left-0 z-10 bg-sdc-gray-100 px-3 py-2" colSpan={3}>
                       Total
                     </td>
                     {ETC_SECTIONS.map((s) => {

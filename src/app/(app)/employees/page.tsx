@@ -85,6 +85,7 @@ export default async function EmployeesPage({
         <table className={`w-full text-sm ${TABLE_GRID}`}>
           <thead>
             <tr className={TABLE_HEADER_ROW}>
+              <th className="w-10 px-2 py-3 text-center">#</th>
               <th className="px-4 py-3">Name</th>
               <th className="px-3 py-3">Department</th>
               <th className="px-3 py-3">Billing group</th>
@@ -96,6 +97,7 @@ export default async function EmployeesPage({
           <tbody>
             {employees.map((e, i) => (
               <tr key={e.id} className={`${TABLE_ROW_HOVER} ${i % 2 === 1 ? "bg-sdc-gray-50/60" : ""}`}>
+                <td className="px-2 py-2 text-center text-sdc-gray-400">{i + 1}</td>
                 <td className="px-4 py-2">
                   <input name="name" defaultValue={e.name} required form={`emp-${e.id}`} className={cellInput} aria-label={`Name, ${e.name}`} />
                 </td>
@@ -133,7 +135,7 @@ export default async function EmployeesPage({
             ))}
             {employees.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-5 text-sdc-gray-400">
+                <td colSpan={7} className="px-4 py-5 text-sdc-gray-400">
                   No employees found.
                 </td>
               </tr>

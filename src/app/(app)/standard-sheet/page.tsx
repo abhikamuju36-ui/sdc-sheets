@@ -513,7 +513,8 @@ export default async function StandardSheetPage({
           <table className={`w-full text-sm ${TABLE_GRID}`}>
             <thead>
               <tr className={TABLE_HEADER_ROW}>
-                <th rowSpan={3} className="sticky left-0 z-10 bg-white px-3 py-3 align-bottom">Job Id</th>
+                <th rowSpan={3} className="sticky left-0 z-10 w-10 min-w-10 bg-white px-2 py-3 text-center align-bottom">#</th>
+                <th rowSpan={3} className="sticky left-10 z-10 bg-white px-3 py-3 align-bottom">Job Id</th>
                 <th rowSpan={3} className="px-3 py-3 align-bottom">Job Name</th>
                 <th rowSpan={3} className="border-l border-sdc-border px-3 py-3 align-bottom">Job Status</th>
                 <th colSpan={3} className="border-l border-sdc-border px-3 py-2 text-center">Execution Rates</th>
@@ -552,7 +553,10 @@ export default async function StandardSheetPage({
             <tbody>
               {rows.map((r, i) => (
                 <tr key={r.jobId} className={`hover:bg-sdc-blue-light/40 ${i % 2 === 1 ? "bg-sdc-gray-50/60" : ""}`}>
-                  <td className={`sticky left-0 z-10 px-3 py-2 font-mono text-sdc-gray-400 ${i % 2 === 1 ? "bg-sdc-gray-50/60" : "bg-white"}`}>
+                  <td className={`sticky left-0 z-10 w-10 min-w-10 px-2 py-2 text-center text-sdc-gray-400 ${i % 2 === 1 ? "bg-sdc-gray-50/60" : "bg-white"}`}>
+                    {i + 1}
+                  </td>
+                  <td className={`sticky left-10 z-10 px-3 py-2 font-mono text-sdc-gray-400 ${i % 2 === 1 ? "bg-sdc-gray-50/60" : "bg-white"}`}>
                     {r.jobIdLabel}
                   </td>
                   <td className="max-w-[220px] truncate px-3 py-2 font-medium text-sdc-navy" title={r.jobName}>
@@ -639,14 +643,14 @@ export default async function StandardSheetPage({
               ))}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={16} className="px-4 py-5 text-sdc-gray-400">
+                  <td colSpan={17} className="px-4 py-5 text-sdc-gray-400">
                     No jobs found for {month}.
                   </td>
                 </tr>
               )}
               {rows.length > 0 && (
                 <tr className="border-t-2 border-sdc-navy bg-sdc-gray-100 font-medium">
-                  <td className="sticky left-0 z-10 bg-sdc-gray-100 px-3 py-2" colSpan={3}>
+                  <td className="sticky left-0 z-10 bg-sdc-gray-100 px-3 py-2" colSpan={4}>
                     Total
                   </td>
                   <td className="border-l border-sdc-border px-2 py-2" colSpan={3}></td>

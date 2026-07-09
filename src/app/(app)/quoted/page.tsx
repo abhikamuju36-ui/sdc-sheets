@@ -115,10 +115,13 @@ export default async function QuotedPage({
         <table className={`w-full text-sm ${TABLE_GRID}`}>
           <thead>
             <tr className={TABLE_HEADER_ROW}>
-              <th rowSpan={2} className="sticky left-0 z-10 bg-sdc-gray-100 px-2 py-2 align-bottom">
+              <th rowSpan={2} className="sticky left-0 z-10 w-8 min-w-8 bg-sdc-gray-100 px-1 py-2 text-center align-bottom">
+                #
+              </th>
+              <th rowSpan={2} className="sticky left-8 z-10 bg-sdc-gray-100 px-2 py-2 align-bottom">
                 <SortButton sortKey="jobId" label="Job Id" currentSort={sortKey} currentDir={sortDir} />
               </th>
-              <th rowSpan={2} className="sticky left-[64px] z-10 min-w-[280px] border-l border-sdc-border bg-sdc-gray-100 px-2 py-2 align-bottom">
+              <th rowSpan={2} className="sticky left-[96px] z-10 min-w-[280px] border-l border-sdc-border bg-sdc-gray-100 px-2 py-2 align-bottom">
                 Job
               </th>
               <th rowSpan={2} className="px-2 py-2 align-bottom">
@@ -178,7 +181,7 @@ export default async function QuotedPage({
           <tbody>
             {jobs.length === 0 && (
               <tr>
-                <td colSpan={7 + dataColumnCount + 2} className="px-4 py-5 text-sdc-gray-400">
+                <td colSpan={8 + dataColumnCount + 2} className="px-4 py-5 text-sdc-gray-400">
                   No jobs found.
                 </td>
               </tr>
@@ -188,10 +191,13 @@ export default async function QuotedPage({
               const zebra = i % 2 === 1 ? "bg-sdc-gray-50/60" : "";
               return (
                 <tr key={job.id} className={`hover:bg-sdc-blue-light/40 ${zebra}`}>
-                  <td className={`sticky left-0 z-10 whitespace-nowrap px-2 py-1.5 font-mono text-xs text-sdc-gray-500 ${zebra || "bg-white"}`}>
+                  <td className={`sticky left-0 z-10 w-8 min-w-8 px-1 py-1.5 text-center text-xs text-sdc-gray-400 ${zebra || "bg-white"}`}>
+                    {i + 1}
+                  </td>
+                  <td className={`sticky left-8 z-10 whitespace-nowrap px-2 py-1.5 font-mono text-xs text-sdc-gray-500 ${zebra || "bg-white"}`}>
                     #{job.jobId}
                   </td>
-                  <td className={`sticky left-[64px] z-10 min-w-[280px] whitespace-nowrap border-l border-sdc-border px-2 py-1.5 text-xs font-medium text-sdc-navy ${zebra || "bg-white"}`}>
+                  <td className={`sticky left-[96px] z-10 min-w-[280px] whitespace-nowrap border-l border-sdc-border px-2 py-1.5 text-xs font-medium text-sdc-navy ${zebra || "bg-white"}`}>
                     {job.jobName}
                   </td>
                   <td className="whitespace-nowrap px-2 py-1.5 text-xs text-sdc-gray-600">{job.customer || "—"}</td>

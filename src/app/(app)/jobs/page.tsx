@@ -80,6 +80,7 @@ export default async function JobsPage({
         <table className={`w-full text-sm ${TABLE_GRID}`}>
           <thead>
             <tr className={TABLE_HEADER_ROW}>
+              <th className="w-10 px-2 py-3 text-center">#</th>
               <th className="px-4 py-3">Job Id</th>
               <th className="px-4 py-3">Job Name</th>
               <th className="px-4 py-3">Customer</th>
@@ -90,13 +91,14 @@ export default async function JobsPage({
           <tbody>
             {jobs.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-5 text-sdc-gray-400">
+                <td colSpan={6} className="px-4 py-5 text-sdc-gray-400">
                   No jobs match this filter.
                 </td>
               </tr>
             )}
             {jobs.map((job, i) => (
               <tr key={job.id} className={`${TABLE_ROW_HOVER} ${i % 2 === 1 ? "bg-sdc-gray-50/60" : ""}`}>
+                <td className="px-2 py-2 text-center text-sdc-gray-400">{i + 1}</td>
                 <td className="px-4 py-2 font-mono text-sdc-gray-400">
                   <Link href={`/jobs/${job.id}`} className="hover:underline">
                     {job.jobId}
