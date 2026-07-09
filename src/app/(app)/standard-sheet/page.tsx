@@ -428,7 +428,7 @@ export default async function StandardSheetPage({
   );
 
   return (
-    <div className="w-full p-8">
+    <div>
       <p className="mb-4 text-sm text-sdc-gray-400">
         Month-scoped Standard Sheet — Execution ETC pulls that month&apos;s Monthly ETC entries; Total ETC,
         % Total, Standard Fees, and Total Standard Fees mirror the workbook&apos;s columns L/M/O/P/T.
