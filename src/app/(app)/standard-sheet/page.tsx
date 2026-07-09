@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
-import { validJobTypeFilter, compareJobIds } from "@/lib/job-filters";
+import { compareJobIds } from "@/lib/job-filters";
+import { getEtcMonthJobWhere } from "@/lib/etc-month-jobs";
 import { getExecutionEtcByJob } from "@/lib/execution-etc";
 import { syncCategoryPoolsFromPowerBi } from "@/lib/sync-powerbi";
 import {
@@ -156,7 +157,7 @@ async function submitStandardSheetMonth(month: string) {
     : null;
 
   const jobs = await prisma.job.findMany({
-    where: { ...validJobTypeFilter, status: "Active", completeDate: null },
+    where: (await getEtcMonthJobWhere(month)).where,
     select: { id: true, executionRate: true },
   });
   const [etcByJob, pools, setting] = await Promise.all([
@@ -331,7 +332,7 @@ export default async function StandardSheetPage({
     // % Total denominator ($L$66) sums every row, so searching must only
     // narrow the display, never change the math.
     const jobs = await prisma.job.findMany({
-      where: { ...validJobTypeFilter, status: "Active", completeDate: null },
+      where: (await getEtcMonthJobWhere(month)).where,
       select: { id: true, jobId: true, jobName: true, status: true, executionRate: true },
     });
     jobs.sort((a, b) => compareJobIds(a.jobId, b.jobId)); // numeric, not lexicographic
