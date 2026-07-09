@@ -6,7 +6,7 @@ import { getEtcMonthJobWhere } from "@/lib/etc-month-jobs";
 import { EtcDraftInput } from "@/components/EtcDraftInput";
 import { ETC_SECTIONS, PARTS_COST_SECTION } from "@/lib/sections";
 import { calcHoursLeft, suggestNewEtc, isMonthLocked, nextMonth } from "@/lib/etc";
-import { submitMonth, reopenMonth, clearMonth, syncPowerBiForEtc, syncEtcHistory } from "@/lib/etc-actions";
+import { submitMonth, reopenMonth, syncPowerBiForEtc, syncEtcHistory } from "@/lib/etc-actions";
 import { isStandardSheetUnlocked, hadWrongPassword, unlockStandardSheet, lockStandardSheet } from "@/lib/standard-sheet-gate";
 import { getExecutionEtcByJob } from "@/lib/execution-etc";
 import {
@@ -411,13 +411,6 @@ export default async function MonthlyEtcPage({
             </button>
           </form>
         )}
-        {started && !locked && (
-          <form action={clearMonth.bind(null, month)}>
-            <button type="submit" className={BUTTON_SECONDARY}>
-              Clear ETC
-            </button>
-          </form>
-        )}
         {started && !locked && jobs.length > 0 && (
           <button type="submit" form="etc-month-form" className={BUTTON_SECONDARY}>
             Submit and Lock
@@ -430,11 +423,15 @@ export default async function MonthlyEtcPage({
             </button>
           </form>
         )}
-        <form action={syncEtcHistory} title="Re-pull all past months from Power BI's ETC Historical measures. Months submitted in this app are never overwritten.">
-          <button type="submit" className={BUTTON_SECONDARY}>
-            Sync History
-          </button>
-        </form>
+        {/* Maintenance-only: rewrites past months from Power BI. Admin-gated so
+            it isn't part of the everyday manager toolbar. */}
+        {role === "ADMIN" && (
+          <form action={syncEtcHistory} title="Re-pull all past months from Power BI's ETC Historical measures. Months submitted in this app are never overwritten.">
+            <button type="submit" className={BUTTON_SECONDARY}>
+              Sync History
+            </button>
+          </form>
+        )}
         {/* Password-gated Standard Sheet columns (Dan/Lisa only) — same
             unlock cookie as the /standard-sheet tab. */}
         {showStandards ? (
@@ -477,7 +474,7 @@ export default async function MonthlyEtcPage({
           ? `"Run Report" starts ${month}: it seeds the job rows and pulls the latest hours from Power BI, just like the sheet.`
           : locked
             ? `${month} is submitted and locked — these numbers are frozen exactly as submitted. Pick a month above to view any past submission.`
-            : `"Run Report" pulls the latest numbers from Power BI for the selected month. Enter Hours Worked, confirm or override each New ETC (suggestion shown in yellow), then Submit and Lock. "Clear ETC" resets New ETC values back to the suggestion (Hours Worked untouched).`}
+            : `"Run Report" pulls the latest numbers from Power BI for the selected month. Enter Hours Worked, confirm or override each New ETC (suggestion shown in yellow), then Submit and Lock.`}
       </p>
 
       {started && (
