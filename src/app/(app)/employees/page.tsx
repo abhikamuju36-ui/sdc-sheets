@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createEmployee, updateEmployee, setEmployeeActive } from "@/lib/employee-actions";
 import { PageTitle } from "@/components/ui/Typography";
 import { StatusBadge } from "@/components/ui/StatusBadge";
-import { card, BUTTON_PRIMARY, BUTTON_SECONDARY, INPUT, LABEL, TABLE_HEADER_ROW, TABLE_ROW_HOVER, TABLE_GRID } from "@/components/ui/classnames";
+import { card, BUTTON_PRIMARY, BUTTON_SECONDARY, INPUT, LABEL, TABLE_HEADER_ROW, TABLE_ROW_HOVER, TABLE_GRID, TABLE_CARD } from "@/components/ui/classnames";
 
 // Replaces the "Employees" tab of Project Planner Data Control.xlsx.
 // Soft-delete only: deactivating keeps every historical hour intact.
@@ -81,7 +81,7 @@ export default async function EmployeesPage({
       </div>
 
       {/* List — row edit forms live outside the table (HTML forbids <form> in <tr>), linked via the form attribute. */}
-      <div className={`${card("p-0")} overflow-hidden`}>
+      <div className={TABLE_CARD}>
         <table className={`w-full text-sm ${TABLE_GRID}`}>
           <thead>
             <tr className={TABLE_HEADER_ROW}>

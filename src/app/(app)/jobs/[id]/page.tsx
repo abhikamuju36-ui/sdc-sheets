@@ -5,7 +5,7 @@ import { notFound } from "next/navigation";
 import { PageTitle, SectionTitle } from "@/components/ui/Typography";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { PillLinks } from "@/components/ui/PillLinks";
-import { card, INPUT, BUTTON_PRIMARY, BUTTON_SECONDARY, LABEL, TABLE_HEADER_ROW, TABLE_GRID } from "@/components/ui/classnames";
+import { card, INPUT, BUTTON_PRIMARY, BUTTON_SECONDARY, LABEL, TABLE_HEADER_ROW, TABLE_GRID, TABLE_CARD } from "@/components/ui/classnames";
 import { saveJobTask, deleteJobTask } from "@/lib/jobtask-actions";
 import { Fragment } from "react";
 
@@ -309,7 +309,7 @@ export default async function JobDetailPage({
           )}
 
           {monthlyActualHours.length > 0 ? (
-            <div className={`${card("p-0")} overflow-hidden`}>
+            <div className={TABLE_CARD}>
               <div className="border-b border-sdc-border-soft px-4 py-3">
                 <SectionTitle>Actual Hours by Month (Power BI)</SectionTitle>
               </div>
@@ -382,7 +382,7 @@ export default async function JobDetailPage({
             cutoff date), and Estimate to Complete, per section code.
           </p>
           {estimatedHours.length > 0 ? (
-            <div className={`${card("p-0")} overflow-hidden`}>
+            <div className={TABLE_CARD}>
               <table className={`w-full text-sm ${TABLE_GRID}`}>
                 <thead>
                   <tr className={TABLE_HEADER_ROW}>
@@ -416,7 +416,7 @@ export default async function JobDetailPage({
             Per-employee task breakdown from the &quot;ME Name&quot; columns — editable here, replacing the Project
             Planner workbook.
           </p>
-          <div className={`${card("p-0")} overflow-hidden`}>
+          <div className={TABLE_CARD}>
             <table className={`w-full text-sm ${TABLE_GRID}`}>
               <thead>
                 <tr className={TABLE_HEADER_ROW}>

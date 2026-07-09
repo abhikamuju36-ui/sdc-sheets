@@ -523,7 +523,7 @@ export default async function StandardSheetPage({
           Standard Fees By Department — {month}
         </h2>
         <form action={savePools.bind(null, month)}>
-          <div className="overflow-x-auto rounded-xl border border-sdc-border bg-white shadow-sm">
+          <div className="overflow-x-auto border border-sdc-border bg-white shadow-sm">
             <table className={`text-sm ${TABLE_GRID}`}>
               <thead>
                 <tr className={TABLE_HEADER_ROW}>
@@ -638,7 +638,7 @@ export default async function StandardSheetPage({
       </div>
 
       <form action={saveRates}>
-        <div className="overflow-x-auto rounded-xl border border-sdc-border bg-white shadow-sm">
+        <div className="overflow-x-auto border border-sdc-border bg-white shadow-sm">
           <table className={`text-sm ${TABLE_GRID}`}>
             <thead>
               <tr className={TABLE_HEADER_ROW}>

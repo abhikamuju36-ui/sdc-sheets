@@ -76,7 +76,7 @@ export default async function JobsPage({
         <PillLinks items={statusLinks} />
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-sdc-border bg-white shadow-sm">
+      <div className="overflow-hidden border border-sdc-border bg-white shadow-sm">
         <table className={`w-full text-sm ${TABLE_GRID}`}>
           <thead>
             <tr className={TABLE_HEADER_ROW}>

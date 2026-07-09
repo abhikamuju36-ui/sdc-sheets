@@ -223,7 +223,7 @@ export default async function MonthlyEtcPage({
 
       {started && (
         <form id="etc-month-form" action={submitMonth.bind(null, month)}>
-          <div className="overflow-x-auto rounded-xl border border-sdc-border bg-white shadow-sm">
+          <div className="overflow-x-auto border border-sdc-border bg-white shadow-sm">
             <table className={`w-full text-sm ${TABLE_GRID}`}>
               <thead>
                 <tr className={TABLE_HEADER_ROW}>

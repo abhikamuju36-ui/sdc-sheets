@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { PageTitle } from "@/components/ui/Typography";
-import { card, INPUT, BUTTON_SECONDARY, TABLE_HEADER_ROW, TABLE_ROW_HOVER, TABLE_GRID } from "@/components/ui/classnames";
+import { card, INPUT, BUTTON_SECONDARY, TABLE_HEADER_ROW, TABLE_ROW_HOVER, TABLE_GRID, TABLE_CARD } from "@/components/ui/classnames";
 import type { Prisma } from "@prisma/client";
 
 const PAGE_SIZE = 100;
@@ -84,7 +84,7 @@ export default async function AuditLogPage({
         )}
       </form>
 
-      <div className={`${card("p-0")} overflow-hidden`}>
+      <div className={TABLE_CARD}>
         <table className={`w-full text-sm ${TABLE_GRID}`}>
           <thead>
             <tr className={TABLE_HEADER_ROW}>

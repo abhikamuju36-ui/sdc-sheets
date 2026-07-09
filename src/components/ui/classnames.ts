@@ -30,3 +30,7 @@ export const TABLE_ROW_HOVER = "transition-colors hover:bg-sdc-blue-light/40";
 // borderless admin-table list.
 export const TABLE_GRID =
   "border-collapse [&_th]:border [&_th]:border-sdc-border [&_td]:border [&_td]:border-sdc-border-soft [&_td]:tabular-nums";
+
+// Table wrapper — sharp corners (not CARD_BASE's rounded-xl) so the grid's
+// straight gridlines run flush to the container edge, like a real spreadsheet.
+export const TABLE_CARD = "overflow-hidden border border-sdc-border bg-white shadow-sm";
