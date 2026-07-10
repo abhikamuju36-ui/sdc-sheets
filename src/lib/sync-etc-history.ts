@@ -37,6 +37,8 @@ export async function syncEtcHistoryFromPowerBi(): Promise<{
   monthsSkippedAppOwned: string[];
   entriesWritten: number;
   unsubmittedFilled: number;
+  poolMonthsRefreshed: string[];
+  poolRowsWritten: number;
 }> {
   const periods = (await runDax(`EVALUATE 'Estimated to Complete Period'`)) as {
     "Estimated to Complete Period[ETC Name]": string;
@@ -164,7 +166,96 @@ export async function syncEtcHistoryFromPowerBi(): Promise<{
     entriesWritten += newEntries.length;
   }
 
-  return { monthsRefreshed, monthsSkippedAppOwned, entriesWritten, unsubmittedFilled };
+  const pools = await syncCategoryPoolHistory(new Map(candidates.map((p) => [p.name, p.month])), appOwned);
+
+  return { monthsRefreshed, monthsSkippedAppOwned, entriesWritten, unsubmittedFilled, ...pools };
+}
+
+const POOL_CATEGORY: Record<string, "ENGINEERING_PM" | "ENGINEERING_WARRANTY" | "SHOP_MANUFACTURING" | "SHOP_WARRANTY"> = {
+  "Engineering|PM": "ENGINEERING_PM",
+  "Engineering|Warranty": "ENGINEERING_WARRANTY",
+  "Shop|Manufacturing": "SHOP_MANUFACTURING",
+  "Shop|Warranty": "SHOP_WARRANTY",
+};
+
+interface StandardFeesRow {
+  "Standard Fees[ETC Period Key]": number;
+  "Standard Fees[Billing Group]": string;
+  "Standard Fees[Department]": string;
+  "Standard Fees[Previous Month Pulled Hours]": number | null;
+  "Standard Fees[New Hours Added this Month]": number | null;
+  "Standard Fees[Hours Available]": number | null;
+  "Standard Fees[Hours Worked this Month]": number | null;
+  "Standard Fees[Hours being pulled this month]": number | null;
+  "Standard Fees[New ETC Hours]": number | null;
+  "Standard Fees[Rate]": number | null;
+  "Standard Fees[Standard Fee]": number | null;
+}
+
+// Backfills the "Standard Fees By Department" category pools for historical
+// months from Power BI's 'Standard Fees' table — the archive of every pool
+// submission (one row per department per ETC period, all fields included:
+// Prev Pulled / New Added / Available / Worked / Pulled / New ETC / Rate /
+// Fee). Same ownership rule as the ETC entries above, plus: a month whose
+// standard sheet was submitted in-app (StandardSheetSnapshot exists) is
+// app-owned and never overwritten.
+async function syncCategoryPoolHistory(
+  monthByPeriodName: Map<string, string>,
+  etcAppOwned: Set<string>,
+): Promise<{ poolMonthsRefreshed: string[]; poolRowsWritten: number }> {
+  const [sfRows, periodKeyRows, snapshotMonths] = await Promise.all([
+    runDax(`EVALUATE 'Standard Fees'`) as Promise<StandardFeesRow[]>,
+    runDax(`
+      EVALUATE SELECTCOLUMNS('Estimated to Complete Period', "Key", 'Estimated to Complete Period'[ETC Period Key], "Name", 'Estimated to Complete Period'[ETC Name])
+    `) as Promise<{ Key: number; Name: string }[]>,
+    prisma.standardSheetSnapshot.findMany({ distinct: ["month"], select: { month: true } }),
+  ]);
+
+  const monthByKey = new Map(periodKeyRows.map((p) => [p.Key, monthByPeriodName.get(p.Name)]));
+  const appOwnedPoolMonths = new Set([...etcAppOwned, ...snapshotMonths.map((s) => s.month)]);
+
+  const rowsByMonth = new Map<string, StandardFeesRow[]>();
+  for (const r of sfRows) {
+    const month = monthByKey.get(r["Standard Fees[ETC Period Key]"]);
+    if (!month || appOwnedPoolMonths.has(month)) continue;
+    if (!rowsByMonth.has(month)) rowsByMonth.set(month, []);
+    rowsByMonth.get(month)!.push(r);
+  }
+
+  const poolMonthsRefreshed: string[] = [];
+  let poolRowsWritten = 0;
+
+  for (const [month, rows] of [...rowsByMonth.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const data = rows.flatMap((r) => {
+      const category = POOL_CATEGORY[`${r["Standard Fees[Billing Group]"]}|${r["Standard Fees[Department]"]}`];
+      if (!category) return [];
+      return [
+        {
+          category,
+          month,
+          previousMonthPulledHours: round2(r["Standard Fees[Previous Month Pulled Hours]"] ?? 0),
+          newHoursAddedThisMonth: round2(r["Standard Fees[New Hours Added this Month]"] ?? 0),
+          hoursAvailable: round2(r["Standard Fees[Hours Available]"] ?? 0),
+          hoursWorkedThisMonth: round2(r["Standard Fees[Hours Worked this Month]"] ?? 0),
+          hoursPulledThisMonth: round2(r["Standard Fees[Hours being pulled this month]"] ?? 0),
+          newEtcHours: round2(r["Standard Fees[New ETC Hours]"] ?? 0),
+          rate: round2(r["Standard Fees[Rate]"] ?? 0),
+          standardFee: round2(r["Standard Fees[Standard Fee]"] ?? 0),
+          source: "power_bi_history",
+        },
+      ];
+    });
+    if (data.length === 0) continue;
+
+    await prisma.$transaction(async (tx) => {
+      await tx.categoryPool.deleteMany({ where: { month } });
+      await tx.categoryPool.createMany({ data });
+    });
+    poolMonthsRefreshed.push(month);
+    poolRowsWritten += data.length;
+  }
+
+  return { poolMonthsRefreshed, poolRowsWritten };
 }
 
 const MONTH_NAME_TO_NUM: Record<string, string> = {

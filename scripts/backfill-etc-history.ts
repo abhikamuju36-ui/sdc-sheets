@@ -13,6 +13,7 @@ async function main() {
   console.log(`Months skipped (app-owned): ${result.monthsSkippedAppOwned.join(", ") || "(none)"}`);
   console.log(`EtcEntry rows written: ${result.entriesWritten}`);
   console.log(`Never-submitted cells filled with the app's own suggestion: ${result.unsubmittedFilled}`);
+  console.log(`Category-pool months refreshed: ${result.poolMonthsRefreshed.join(", ") || "(none)"} (${result.poolRowsWritten} rows)`);
 
   await logAuditFor(null, "backfill-etc-history-script", {
     action: "etc.syncEtcHistory",
