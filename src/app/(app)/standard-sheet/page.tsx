@@ -39,6 +39,23 @@ function currentMonth() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+// The department pools for `month`, or — if that month was never refreshed —
+// the most recent PRIOR month's pools as a labeled fallback, so the block is
+// never empty and Standard Fees never silently collapse to $0. `carriedFrom`
+// is the source month when the fallback kicked in, else null. Shared by the
+// live view and the submit action so what you see is what gets frozen.
+async function loadEffectivePools(month: string) {
+  const own = await prisma.categoryPool.findMany({ where: { month } });
+  if (own.length > 0) return { pools: own, carriedFrom: null as string | null };
+  const prior = await prisma.categoryPool.findFirst({
+    where: { month: { lt: month } },
+    orderBy: { month: "desc" },
+    select: { month: true },
+  });
+  if (!prior) return { pools: own, carriedFrom: null as string | null };
+  return { pools: await prisma.categoryPool.findMany({ where: { month: prior.month } }), carriedFrom: prior.month };
+}
+
 async function saveRates(formData: FormData) {
   "use server";
   const jobIds = formData.getAll("jobId").map((v) => Number(v));
@@ -160,17 +177,19 @@ async function submitStandardSheetMonth(month: string) {
     where: (await getEtcMonthJobWhere(month)).where,
     select: { id: true, executionRate: true },
   });
-  const [etcByJob, pools, setting] = await Promise.all([
+  const [etcByJob, effectivePools, setting] = await Promise.all([
     getExecutionEtcByJob(jobs.map((j) => j.id), month),
-    prisma.categoryPool.findMany({ where: { month } }),
+    // Same fallback the live view uses, so submitting a month that shows
+    // carried-forward pools freezes exactly what was on screen (not $0).
+    loadEffectivePools(month).then((r) => r.pools),
     prisma.standardSheetSetting.findUnique({ where: { id: 1 } }),
   ]);
   const contingencyRate = setting ? Number(setting.contingencyRate) : 1.2;
   const poolTotals = {
-    engineeringPM: Number(pools.find((p) => p.category === "ENGINEERING_PM")?.standardFee ?? 0),
-    engineeringWarranty: Number(pools.find((p) => p.category === "ENGINEERING_WARRANTY")?.standardFee ?? 0),
-    shopManufacturing: Number(pools.find((p) => p.category === "SHOP_MANUFACTURING")?.standardFee ?? 0),
-    shopWarranty: Number(pools.find((p) => p.category === "SHOP_WARRANTY")?.standardFee ?? 0),
+    engineeringPM: Number(effectivePools.find((p) => p.category === "ENGINEERING_PM")?.standardFee ?? 0),
+    engineeringWarranty: Number(effectivePools.find((p) => p.category === "ENGINEERING_WARRANTY")?.standardFee ?? 0),
+    shopManufacturing: Number(effectivePools.find((p) => p.category === "SHOP_MANUFACTURING")?.standardFee ?? 0),
+    shopWarranty: Number(effectivePools.find((p) => p.category === "SHOP_WARRANTY")?.standardFee ?? 0),
   };
 
   const rows = jobs.map((job) => {
@@ -293,6 +312,20 @@ export default async function StandardSheetPage({
   const role = (session?.user as { role?: string } | undefined)?.role;
   const contingencyRate = setting ? Number(setting.contingencyRate) : 1.2;
 
+  // A month whose department pools were never refreshed (e.g. a month created
+  // only by the ETC history backfill) would otherwise render the block empty
+  // and allocate $0 Standard Fees to every job. Fall back to the most recent
+  // PRIOR month that does have pools — the best available figures — clearly
+  // labeled, with the exact month numbers one "Refresh Pools" click away. A
+  // submitted month renders from its frozen snapshot, so it never needs this.
+  let effectivePools = pools;
+  let poolsCarriedFrom: string | null = null;
+  if (!isSubmitted && pools.length === 0) {
+    const fallback = await loadEffectivePools(month);
+    effectivePools = fallback.pools;
+    poolsCarriedFrom = fallback.carriedFrom;
+  }
+
   const jobFilter: Prisma.JobWhereInput = q
     ? { OR: [{ jobName: { contains: q } }, { jobId: { contains: q } }] }
     : {};
@@ -338,10 +371,10 @@ export default async function StandardSheetPage({
     jobs.sort((a, b) => compareJobIds(a.jobId, b.jobId)); // numeric, not lexicographic
     const etcByJob = await getExecutionEtcByJob(jobs.map((j) => j.id), month);
     const poolTotals = {
-      engineeringPM: Number(pools.find((p) => p.category === "ENGINEERING_PM")?.standardFee ?? 0),
-      engineeringWarranty: Number(pools.find((p) => p.category === "ENGINEERING_WARRANTY")?.standardFee ?? 0),
-      shopManufacturing: Number(pools.find((p) => p.category === "SHOP_MANUFACTURING")?.standardFee ?? 0),
-      shopWarranty: Number(pools.find((p) => p.category === "SHOP_WARRANTY")?.standardFee ?? 0),
+      engineeringPM: Number(effectivePools.find((p) => p.category === "ENGINEERING_PM")?.standardFee ?? 0),
+      engineeringWarranty: Number(effectivePools.find((p) => p.category === "ENGINEERING_WARRANTY")?.standardFee ?? 0),
+      shopManufacturing: Number(effectivePools.find((p) => p.category === "SHOP_MANUFACTURING")?.standardFee ?? 0),
+      shopWarranty: Number(effectivePools.find((p) => p.category === "SHOP_WARRANTY")?.standardFee ?? 0),
     };
 
     const base = jobs.map((job) => {
@@ -408,6 +441,9 @@ export default async function StandardSheetPage({
   );
 
   const editable = !isSubmitted;
+  // Carried-forward pools belong to another month — show them read-only so a
+  // Save Pools can't try to write rows that don't exist for the selected month.
+  const poolsEditable = editable && !poolsCarriedFrom;
 
   // "Standard Fees By Department" block (sheet rows 71-108), one display row
   // per category. Order matches the sheet; the manual-cell default hints come
@@ -418,7 +454,7 @@ export default async function StandardSheetPage({
     { category: "SHOP_MANUFACTURING", group: "Shop", dept: "Manufacturing", hint: "Defaults to Hours Worked This Month" },
     { category: "SHOP_WARRANTY", group: "Shop", dept: "Warranty", hint: "Defaults to Hours Worked This Month" },
   ] as const;
-  const poolByCategory = new Map(pools.map((p) => [p.category, p]));
+  const poolByCategory = new Map(effectivePools.map((p) => [p.category, p]));
   const engineeringTotal = ["ENGINEERING_PM", "ENGINEERING_WARRANTY"].reduce(
     (sum, c) => sum + Number(poolByCategory.get(c as never)?.standardFee ?? 0),
     0
@@ -687,6 +723,12 @@ export default async function StandardSheetPage({
         <h2 className="mb-2 font-heading text-base font-semibold tracking-tight text-sdc-navy">
           Standard Fees By Department — {month}
         </h2>
+        {poolsCarriedFrom && (
+          <p className="mb-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            No pool data has been pulled for {month} yet — showing {poolsCarriedFrom}&apos;s figures as an estimate (Standard
+            Fees above are allocated from these). Click &quot;Refresh Pools (Power BI)&quot; above to pull {month}&apos;s exact numbers.
+          </p>
+        )}
         <form action={savePools.bind(null, month)}>
           <div className="max-h-[calc(100vh-260px)] min-w-[480px] overflow-auto border border-sdc-border bg-white shadow-sm select-none styled-scrollbar">
             <table className={`w-full text-sm ${TABLE_GRID}`}>
@@ -694,52 +736,58 @@ export default async function StandardSheetPage({
                 <tr className={TABLE_HEADER_ROW}>
                   <th className="px-3 py-2">Billing Group</th>
                   <th className="px-3 py-2">Department</th>
-                  <th className="border-l border-sdc-border px-3 py-2 text-right">Previous Month Pulled Hours</th>
-                  <th className="px-3 py-2 text-right">New Hours Added this Month</th>
-                  <th className="px-3 py-2 text-right">Hours Available</th>
-                  <th className="px-3 py-2 text-right">Hours Worked this Month</th>
-                  <th className="bg-sdc-yellow-bg px-3 py-2 text-right">Hours being pulled this month</th>
-                  <th className="px-3 py-2 text-right">New ETC Hours</th>
-                  <th className="bg-sdc-yellow-bg px-3 py-2 text-right">Rate</th>
-                  <th className="border-l border-sdc-border px-3 py-2 text-right">Standard Fee</th>
+                  <th className="px-3 py-2">Attribute</th>
+                  <th className="px-3 py-2 text-right">Value</th>
                 </tr>
               </thead>
               <tbody>
-                {POOL_ROWS.map(({ category, group, dept, hint }, i) => {
-                  const pool = poolByCategory.get(category);
-                  const groupBg = group === "Engineering" ? "bg-[#D9E7F5]" : "bg-[#FBE2D5]";
-                  const zebra = i % 2 === 1 ? "bg-sdc-gray-50/60" : "";
-                  if (!pool) {
-                    return (
-                      <tr key={category} className={zebra}>
-                        <td className={`px-3 py-2 font-medium text-sdc-navy ${groupBg}`}>{group}</td>
-                        <td className="px-3 py-2 text-sdc-gray-700">{dept}</td>
-                        <td colSpan={8} className="px-3 py-2 text-sdc-gray-400">
-                          No pool data for {month} — use &quot;Refresh Pools (Power BI)&quot;.
-                        </td>
-                      </tr>
+                {/* Transposed to match the workbook's "Standard Fees By Department"
+                    block: one attribute per row, grouped under Billing Group /
+                    Department cells that span their attribute rows. Yellow rows
+                    (Hours being pulled / Rate) are the manual editable cells. */}
+                {(["Engineering", "Shop"] as const).flatMap((group) => {
+                  const band = group === "Engineering" ? "bg-[#D9E7F5]" : "bg-[#FBE2D5]";
+                  const depts = POOL_ROWS.filter((r) => r.group === group);
+                  const groupSpan = depts.reduce((n, d) => n + (poolByCategory.get(d.category) ? 8 : 1), 0);
+                  let firstOfGroup = true;
+
+                  return depts.flatMap(({ category, dept, hint }) => {
+                    const pool = poolByCategory.get(category);
+                    const groupCell = (rowSpan: number) => (
+                      <td rowSpan={rowSpan} className={`px-3 py-2 text-center font-medium text-sdc-navy ${band}`}>
+                        {group}
+                      </td>
                     );
-                  }
-                  const available = Number(pool.hoursAvailable);
-                  const pulled = Number(pool.hoursPulledThisMonth);
-                  const rate = Number(pool.rate);
-                  const newEtc = available - pulled;
-                  return (
-                    <tr key={category} className={`hover:bg-sdc-blue-light/40 ${zebra}`}>
-                      <td className={`px-3 py-2 font-medium text-sdc-navy ${groupBg}`}>{group}</td>
-                      <td className="px-3 py-2 text-sdc-gray-700">{dept}</td>
-                      <td className="px-3 py-2 text-right text-xs text-sdc-navy">
-                        {Number(pool.previousMonthPulledHours).toLocaleString()}
-                      </td>
-                      <td className="px-3 py-2 text-right text-xs text-sdc-navy">
-                        {Number(pool.newHoursAddedThisMonth).toLocaleString()}
-                      </td>
-                      <td className="px-3 py-2 text-right text-xs font-medium text-sdc-navy">{available.toLocaleString()}</td>
-                      <td className="px-3 py-2 text-right text-xs text-sdc-navy">
-                        {Number(pool.hoursWorkedThisMonth).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                      </td>
-                      <td className="bg-sdc-yellow-bg/60 px-3 py-2 text-right">
-                        {editable ? (
+
+                    if (!pool) {
+                      const row = (
+                        <tr key={category} className="hover:bg-sdc-blue-light/40">
+                          {firstOfGroup && groupCell(groupSpan)}
+                          <td className="px-3 py-2 text-center text-sdc-gray-700">{dept}</td>
+                          <td colSpan={2} className="px-3 py-2 text-sdc-gray-400">
+                            No pool data for {month} — use &quot;Refresh Pools (Power BI)&quot;.
+                          </td>
+                        </tr>
+                      );
+                      firstOfGroup = false;
+                      return [row];
+                    }
+
+                    const available = Number(pool.hoursAvailable);
+                    const pulled = Number(pool.hoursPulledThisMonth);
+                    const rate = Number(pool.rate);
+                    const newEtc = available - pulled;
+                    const hours = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+
+                    const attrs: { label: string; node: React.ReactNode; yellow?: boolean; bold?: boolean }[] = [
+                      { label: "Previous Month Pulled Hours", node: hours(Number(pool.previousMonthPulledHours)) },
+                      { label: "New Hours Added this Month", node: hours(Number(pool.newHoursAddedThisMonth)) },
+                      { label: "Hours Available", node: hours(available), bold: true },
+                      { label: "Hours Worked this Month", node: hours(Number(pool.hoursWorkedThisMonth)) },
+                      {
+                        label: "Hours being pulled this month",
+                        yellow: true,
+                        node: poolsEditable ? (
                           <SelectOnFocusInput
                             type="number"
                             step="0.01"
@@ -747,37 +795,54 @@ export default async function StandardSheetPage({
                             defaultValue={pulled.toString()}
                             title={hint}
                             aria-label={`Hours being pulled this month, ${group} ${dept}`}
-                            className="w-20 [appearance:textfield] border-none bg-transparent px-1.5 py-1 text-right text-xs outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                            className="w-24 [appearance:textfield] border-none bg-transparent px-1.5 py-1 text-right text-xs outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                           />
                         ) : (
-                          <span className="text-xs text-sdc-gray-500">{pulled.toLocaleString()}</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-right text-xs font-medium text-sdc-navy">{newEtc.toLocaleString()}</td>
-                      <td className="bg-sdc-yellow-bg/60 px-3 py-2 text-right">
-                        {editable ? (
+                          <span className="text-xs text-sdc-gray-500">{hours(pulled)}</span>
+                        ),
+                      },
+                      { label: "New ETC Hours", node: hours(newEtc), bold: true },
+                      {
+                        label: "Rate",
+                        yellow: true,
+                        node: poolsEditable ? (
                           <SelectOnFocusInput
                             type="number"
                             step="0.01"
                             name={`rate__${category}`}
                             defaultValue={rate.toString()}
                             aria-label={`Rate, ${group} ${dept}`}
-                            className="w-14 [appearance:textfield] border-none bg-transparent px-1.5 py-1 text-right text-xs outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                            className="w-24 [appearance:textfield] border-none bg-transparent px-1.5 py-1 text-right text-xs outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                           />
                         ) : (
                           <span className="text-xs text-sdc-gray-500">{rate.toLocaleString()}</span>
+                        ),
+                      },
+                      { label: "Standard Fee", node: currency(Number(pool.standardFee)), bold: true },
+                    ];
+
+                    const rows = attrs.map((a, ai) => (
+                      <tr key={`${category}-${a.label}`} className="hover:bg-sdc-blue-light/40">
+                        {firstOfGroup && ai === 0 && groupCell(groupSpan)}
+                        {ai === 0 && (
+                          <td rowSpan={attrs.length} className="px-3 py-2 text-center text-sdc-gray-700">
+                            {dept}
+                          </td>
                         )}
-                      </td>
-                      <td className="px-3 py-2 text-right text-xs font-semibold text-sdc-navy">
-                        {currency(Number(pool.standardFee))}
-                      </td>
-                    </tr>
-                  );
+                        <td className="px-3 py-1.5 text-sdc-gray-700">{a.label}</td>
+                        <td className={`px-3 py-1.5 text-right text-xs text-sdc-navy ${a.yellow ? "bg-sdc-yellow-bg/60" : ""} ${a.bold ? "font-semibold" : ""}`}>
+                          {a.node}
+                        </td>
+                      </tr>
+                    ));
+                    firstOfGroup = false;
+                    return rows;
+                  });
                 })}
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-sdc-navy bg-sdc-gray-100 text-xs font-medium">
-                  <td colSpan={9} className="px-3 py-2 text-right">
+                  <td colSpan={3} className="px-3 py-2 text-right">
                     <span className="mr-6 rounded bg-[#D9E7F5] px-2 py-0.5 text-sdc-navy">
                       Engineering Total: {currency(engineeringTotal)}
                     </span>
@@ -792,7 +857,7 @@ export default async function StandardSheetPage({
               </tfoot>
             </table>
           </div>
-          {editable && pools.length > 0 && (
+          {poolsEditable && effectivePools.length > 0 && (
             <div className="mt-2">
               <button type="submit" className={BUTTON_SECONDARY}>
                 Save Pools
