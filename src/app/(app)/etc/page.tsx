@@ -4,9 +4,11 @@ import { auth } from "@/lib/auth";
 import { compareJobIds } from "@/lib/job-filters";
 import { getEtcMonthJobWhere } from "@/lib/etc-month-jobs";
 import { EtcDraftInput } from "@/components/EtcDraftInput";
+import { ExecutionRateInput } from "@/components/ExecutionRateInput";
 import { ETC_SECTIONS, PARTS_COST_SECTION } from "@/lib/sections";
-import { calcHoursLeft, suggestNewEtc, isMonthLocked, nextMonth } from "@/lib/etc";
+import { calcHoursLeft, suggestNewEtc, isMonthLocked, nextMonth, round2 } from "@/lib/etc";
 import { submitMonth, reopenMonth, syncPowerBiForEtc, syncEtcHistory } from "@/lib/etc-actions";
+import { RunReportButton } from "@/components/RunReportButton";
 import { isStandardSheetUnlocked, hadWrongPassword, unlockStandardSheet, lockStandardSheet } from "@/lib/standard-sheet-gate";
 import { getExecutionEtcByJob } from "@/lib/execution-etc";
 import {
@@ -158,7 +160,9 @@ function newEtcBg(hasValue: boolean) {
   return hasValue ? "bg-[#F2F2F2]" : "bg-[#FAFAC4]";
 }
 function diffBg(diff: number) {
-  if (diff === 0) return "bg-white";
+  // Epsilon, not ===: hour sums carry float residue (1e-13) that would tint
+  // the cell red/green while wholeNum displays a plain 0.
+  if (Math.abs(diff) < 0.005) return "bg-white";
   return diff < 0 ? "bg-[#EEADAC]" : "bg-[#9FCE62]";
 }
 
@@ -171,11 +175,26 @@ function wholeNum(n: number): string {
 // Header cells have no row value, so "New ETC"/"Diff" fall back to a neutral
 // flat shade rather than the value-conditional colors used in the body.
 function subColHeaderBg(col: string): string {
-  if (col === "Prior ETC") return "bg-[#5E91D3] text-white";
+  if (col === "Prior ETC") return "bg-[#5E91D3] text-sdc-gray-700";
   if (col === "Hours Worked Month" || col === "Hours Worked" || col === "Money Spent Month") return HOURS_WORKED_BG;
   if (col === "Hours Left" || col === "Money Left") return HOURS_LEFT_BG;
   if (col === "New ETC" || col === "Total New ETC") return "bg-[#F2F2F2]";
   return "";
+}
+
+// Column-level "this is editable" marker — replaces the old per-cell dashed
+// underline, which got noisy across a grid this dense. Only "Hours Worked
+// Month" and "New ETC" are actually manager-editable (Money Spent Month is
+// Power BI's read-only actual; the Total/Standard columns are pure rollups),
+// so the pencil only appears on those column-label header cells.
+const EDITABLE_COL_LABELS = new Set(["Hours Worked Month", "New ETC"]);
+function colHeaderLabel(col: string) {
+  if (!EDITABLE_COL_LABELS.has(col)) return col;
+  return (
+    <>
+      {col} <span className="text-sdc-blue" title="Editable column">✎</span>
+    </>
+  );
 }
 
 // Same column-identity backgrounds, without a text-color opinion — for cells
@@ -210,8 +229,24 @@ const STANDARD_LEAF_COLUMNS = [
   "Notes",
 ] as const;
 // Marks the left edge of the whole Standard block so it reads as a distinct
-// section bolted onto the ETC grid.
-const STD_EDGE = "border-l-2 border-l-sdc-navy";
+// section bolted onto the ETC grid. `!` forces these to win over TABLE_GRID's
+// blanket `[&_th]:border-l`/`[&_td]:border-l` rules, which — being a
+// class+element selector — otherwise out-specificity a plain utility class
+// and silently reset the border back to the grid's thin default. Matches
+// TABLE_GRID's own gridline color (#2b2b2b, a blackish charcoal) exactly —
+// same color on both the wide border-left and the thin border-bottom means
+// their mitered corner is invisible, instead of the jagged two-tone seam a
+// mismatched divider color made.
+const STD_EDGE = "border-l-[33px]! border-l-[#2b2b2b]!";
+// Same treatment for phase/Parts-Cost/Total block boundaries — a heavier
+// divider than the grid's normal thin gridline, matching the sheet's solid
+// rules between major column blocks.
+const PHASE_EDGE = "border-l-[33px]! border-l-[#2b2b2b]!";
+// Same idea, scaled down for the levels nested inside a phase — billing
+// group (Engineering/Shop) gets a medium divider, sub-group (ME/CE/GE/dept)
+// a light one, both still heavier than the plain 1px gridline.
+const GROUP_EDGE = "border-l-[12px]! border-l-[#2b2b2b]!";
+const SUBGROUP_EDGE = "border-l-4! border-l-[#2b2b2b]!";
 
 function currentMonth() {
   const d = new Date();
@@ -236,6 +271,55 @@ export default async function MonthlyEtcPage({
   })();
   const visibleCols = ALL_ETC_COLS.filter((c) => selectedGroups.has(c.billingGroup));
   const visibleGroups = DEPT_GROUPS.filter((g) => selectedGroups.has(g));
+
+  // Every section that starts a new phase (Complete Design & Build / Testing /
+  // Teardown & Install) gets a heavier divider — like the sheet's solid black
+  // rules between phase blocks — instead of the grid's usual thin gridline.
+  const phaseStartCodes = new Set<string>();
+  {
+    let lastPhase: string | undefined;
+    for (const c of visibleCols) {
+      if (c.phaseLabel !== lastPhase) {
+        phaseStartCodes.add(c.code);
+        lastPhase = c.phaseLabel;
+      }
+    }
+  }
+
+  // Same idea, one level down: billing-group (Engineering/Shop) boundaries
+  // within a phase, and sub-group (ME/CE/GE/dept) boundaries within a billing
+  // group — each gets its own divider weight, lighter than the phase divider
+  // above it but still heavier than the grid's default gridline.
+  const groupStartCodes = new Set<string>();
+  const subgroupStartCodes = new Set<string>();
+  {
+    let lastGroup: string | undefined;
+    let lastSubgroup: string | undefined;
+    for (const c of visibleCols) {
+      const groupKey = `${c.phaseLabel}|${c.groupLabel}`;
+      if (groupKey !== lastGroup) {
+        groupStartCodes.add(c.code);
+        lastGroup = groupKey;
+      }
+      const subgroupKey = `${groupKey}|${c.subgroupLabel}`;
+      if (subgroupKey !== lastSubgroup) {
+        subgroupStartCodes.add(c.code);
+        lastSubgroup = subgroupKey;
+      }
+    }
+  }
+
+  // Priority: phase > billing-group > sub-group > the grid's normal thin
+  // gridline. Every boundary set above a given level also implies the ones
+  // below it (a new phase is also a new group and sub-group), so checking in
+  // this order and returning on the first match is enough.
+  function edgeFor(code: string, index: number): string {
+    if (index === 0) return "border-l border-sdc-border";
+    if (phaseStartCodes.has(code)) return PHASE_EDGE;
+    if (groupStartCodes.has(code)) return GROUP_EDGE;
+    if (subgroupStartCodes.has(code)) return SUBGROUP_EDGE;
+    return "border-l border-sdc-border";
+  }
 
   const distinctMonths = await prisma.etcEntry.findMany({
     distinct: ["month"],
@@ -292,6 +376,12 @@ export default async function MonthlyEtcPage({
   // % Total denominator is the grand Total ETC $ across those same rows.
   const showStandards = await isStandardSheetUnlocked();
   const standardWrongPassword = showStandards ? false : await hadWrongPassword();
+  // Rates are shared with /standard-sheet's own ExecutionRate rows — once
+  // that tab has submitted+frozen this month's snapshot, rates must stop
+  // changing here too (matches that tab's own editable/frozen rule).
+  const standardSheetSubmitted = showStandards
+    ? !!(await prisma.standardSheetSnapshot.findFirst({ where: { month }, select: { id: true } }))
+    : false;
 
   type StandardRow = {
     engrRate: number;
@@ -406,9 +496,7 @@ export default async function MonthlyEtcPage({
         <DeptColumnFilter selected={visibleGroups} />
         {!locked && (
           <form action={syncPowerBiForEtc.bind(null, month)}>
-            <button type="submit" className={BUTTON_PRIMARY}>
-              Run Report
-            </button>
+            <RunReportButton className={BUTTON_PRIMARY}>Run Report</RunReportButton>
           </form>
         )}
         {started && !locked && jobs.length > 0 && (
@@ -479,7 +567,7 @@ export default async function MonthlyEtcPage({
 
       {started && (
         <form id="etc-month-form" action={submitMonth.bind(null, month)}>
-          <div className="max-h-[calc(100vh-260px)] min-w-[480px] overflow-auto border border-sdc-border bg-white shadow-sm select-none styled-scrollbar">
+          <div className="max-h-[calc(100vh-260px)] min-w-[480px] overflow-auto border border-sdc-border border-t-[#2b2b2b] bg-white shadow-sm select-none styled-scrollbar">
             <table className={`w-full text-sm ${TABLE_GRID}`}>
               <thead className="sticky top-0 z-20 bg-sdc-gray-100">
                 <tr className={TABLE_HEADER_ROW}>
@@ -491,14 +579,14 @@ export default async function MonthlyEtcPage({
                   </th>
                   <th rowSpan={5} className="sticky left-[120px] z-10 bg-sdc-gray-100 px-3 py-3 align-bottom">Job Name</th>
                   {headerRuns(visibleCols, (c) => c.phaseLabel, (c) => c.phaseLabel).map((p, i) => (
-                    <th key={p.key + i} colSpan={p.count * SUB_COLUMNS.length} className="border-l border-sdc-border px-3 py-1.5 text-center">
+                    <th key={p.key + i} colSpan={p.count * SUB_COLUMNS.length} className={`${i === 0 ? "border-l border-sdc-border" : PHASE_EDGE} px-3 py-1.5 text-center`}>
                       {p.label}
                     </th>
                   ))}
-                  <th colSpan={PARTS_COST_SUB_COLUMNS.length} className="border-l border-sdc-border bg-sdc-gray-100 px-3 py-1.5 text-center text-sdc-gray-700">
+                  <th colSpan={PARTS_COST_SUB_COLUMNS.length} className={`${PHASE_EDGE} bg-sdc-gray-100 px-3 py-1.5 text-center text-sdc-gray-700`}>
                     Parts Cost
                   </th>
-                  <th colSpan={visibleGroups.length * TOTAL_SUB_COLUMNS.length} className="border-l border-sdc-border bg-[#FDFDE3] px-3 py-1.5 text-center text-sdc-navy">
+                  <th colSpan={visibleGroups.length * TOTAL_SUB_COLUMNS.length} className={`${PHASE_EDGE} bg-[#FDFDE3] px-3 py-1.5 text-center text-sdc-navy`}>
                     Total (New ETC)
                   </th>
                   {showStandards && (
@@ -513,92 +601,106 @@ export default async function MonthlyEtcPage({
                 </tr>
                 {/* Billing-group row: Engineering / Shop per phase, like the sheet. */}
                 <tr className={TABLE_HEADER_ROW}>
-                  {headerRuns(visibleCols, (c) => `${c.phaseLabel}|${c.groupLabel}`, (c) => c.groupLabel).map((g, i) => (
-                    <th key={g.key + i} colSpan={g.count * SUB_COLUMNS.length} className="border-l border-sdc-border px-2 py-1 text-center font-medium">
-                      {g.label}
-                    </th>
-                  ))}
+                  {(() => {
+                    let colIdx = 0;
+                    return headerRuns(visibleCols, (c) => `${c.phaseLabel}|${c.groupLabel}`, (c) => c.groupLabel).map((g, i) => {
+                      const startCode = visibleCols[colIdx].code;
+                      colIdx += g.count;
+                      return (
+                        <th key={g.key + i} colSpan={g.count * SUB_COLUMNS.length} className={`${edgeFor(startCode, i)} px-2 py-1 text-center font-medium`}>
+                          {g.label}
+                        </th>
+                      );
+                    });
+                  })()}
                   {/* Parts Cost has no Engineering/Shop split — one green Total
                       block spanning down to the column-label row, as printed. */}
-                  <th rowSpan={3} colSpan={PARTS_COST_SUB_COLUMNS.length} className="border-l border-sdc-border bg-[#00B050] px-2 py-1 text-center text-white">
+                  <th rowSpan={3} colSpan={PARTS_COST_SUB_COLUMNS.length} className={`${PHASE_EDGE} bg-[#00B050] px-2 py-1 text-center text-white`}>
                     Total
                   </th>
-                  {visibleGroups.map((group) => (
-                    <th key={group} colSpan={TOTAL_SUB_COLUMNS.length} className="border-l border-sdc-border bg-[#FDFDE3] px-2 py-1 text-center font-medium text-sdc-navy">
+                  {visibleGroups.map((group, i) => (
+                    <th key={group} colSpan={TOTAL_SUB_COLUMNS.length} className={`${i === 0 ? PHASE_EDGE : "border-l border-sdc-border"} bg-[#FDFDE3] px-2 py-1 text-center font-medium text-sdc-navy`}>
                       {group}
                     </th>
                   ))}
                 </tr>
                 {/* Sub-group row: ME / CE / General Engineering / dept abbreviations. */}
                 <tr className={TABLE_HEADER_ROW}>
-                  {headerRuns(
-                    visibleCols,
-                    (c) => `${c.phaseLabel}|${c.groupLabel}|${c.subgroupLabel}`,
-                    (c) => c.subgroupLabel,
-                  ).map((g, i) => (
-                    <th key={g.key + i} colSpan={g.count * SUB_COLUMNS.length} className="border-l border-sdc-border px-2 py-1 text-center font-medium">
-                      {g.label}
-                    </th>
-                  ))}
-                  {visibleGroups.map((group) => (
-                    <th key={group} colSpan={TOTAL_SUB_COLUMNS.length} className="border-l border-sdc-border bg-[#FDFDE3] px-2 py-1 text-center font-medium text-sdc-navy">
+                  {(() => {
+                    let colIdx = 0;
+                    return headerRuns(
+                      visibleCols,
+                      (c) => `${c.phaseLabel}|${c.groupLabel}|${c.subgroupLabel}`,
+                      (c) => c.subgroupLabel,
+                    ).map((g, i) => {
+                      const startCode = visibleCols[colIdx].code;
+                      colIdx += g.count;
+                      return (
+                        <th key={g.key + i} colSpan={g.count * SUB_COLUMNS.length} className={`${edgeFor(startCode, i)} px-2 py-1 text-center font-medium`}>
+                          {g.label}
+                        </th>
+                      );
+                    });
+                  })()}
+                  {visibleGroups.map((group, i) => (
+                    <th key={group} colSpan={TOTAL_SUB_COLUMNS.length} className={`${i === 0 ? PHASE_EDGE : "border-l border-sdc-border"} bg-[#FDFDE3] px-2 py-1 text-center font-medium text-sdc-navy`}>
                       {group === "Engineering" ? "ME & CE & GE" : "MB & EB"}
                     </th>
                   ))}
                 </tr>
                 {/* Colored section row, labels exactly as the sheet prints them. */}
                 <tr className={TABLE_HEADER_ROW}>
-                  {visibleCols.map((s) => {
+                  {visibleCols.map((s, i) => {
                     const color = SECTION_HEADER_COLOR[s.code];
                     return (
                       <th
                         key={s.code}
                         title={`${s.name} (${s.code})`}
                         colSpan={SUB_COLUMNS.length}
-                        className={`border-l border-sdc-border px-2 py-1 text-center ${color ?? ""}`}
+                        className={`${edgeFor(s.code, i)} px-2 py-1 text-center ${color ?? ""}`}
                       >
                         {s.sectionDisplay}
                       </th>
                     );
                   })}
-                  {visibleGroups.map((group) => (
+                  {visibleGroups.map((group, i) => (
                     <th
                       key={group}
                       colSpan={TOTAL_SUB_COLUMNS.length}
-                      className={`border-l border-sdc-border px-2 py-1 text-center text-sdc-navy ${group === "Engineering" ? "bg-[#D1ECF9]" : "bg-[#E6AC89]"}`}
+                      className={`${i === 0 ? PHASE_EDGE : "border-l border-sdc-border"} px-2 py-1 text-center text-sdc-navy ${group === "Engineering" ? "bg-[#D1ECF9]" : "bg-[#E6AC89]"}`}
                     >
                       All
                     </th>
                   ))}
                 </tr>
                 <tr className={TABLE_HEADER_ROW}>
-                  {visibleCols.map((s) =>
-                    SUB_COLUMNS.map((col) => (
+                  {visibleCols.map((s, i) =>
+                    SUB_COLUMNS.map((col, ci) => (
                       <th
                         key={`${s.code}-${col}`}
-                        className={`border-l border-sdc-border px-1 py-1.5 text-right text-[10px] ${
+                        className={`${ci === 0 ? edgeFor(s.code, i) : "border-l border-sdc-border"} px-1 py-1.5 text-right text-[10px] ${
                           subColHeaderBg(col) || SECTION_HEADER_COLOR_LIGHT[s.code] || ""
                         }`}
                       >
-                        {col}
+                        {colHeaderLabel(col)}
                       </th>
                     ))
                   )}
-                  {PARTS_COST_SUB_COLUMNS.map((col) => (
+                  {PARTS_COST_SUB_COLUMNS.map((col, i) => (
                     <th
                       key={`parts-cost-${col}`}
-                      className={`border-l border-sdc-border px-1 py-1.5 text-right text-[10px] ${
+                      className={`${i === 0 ? PHASE_EDGE : "border-l border-sdc-border"} px-1 py-1.5 text-right text-[10px] ${
                         subColHeaderBg(col) || "bg-sdc-gray-100 text-sdc-gray-700"
                       }`}
                     >
-                      {col}
+                      {colHeaderLabel(col)}
                     </th>
                   ))}
-                  {visibleGroups.map((group) =>
-                    TOTAL_SUB_COLUMNS.map((col) => (
+                  {visibleGroups.map((group, gi) =>
+                    TOTAL_SUB_COLUMNS.map((col, ci) => (
                       <th
                         key={`${group}-${col}`}
-                        className={`border-l border-sdc-border px-1 py-1.5 text-right text-[10px] ${
+                        className={`${ci === 0 && gi === 0 ? PHASE_EDGE : "border-l border-sdc-border"} px-1 py-1.5 text-right text-[10px] ${
                           subColHeaderBg(col) || "bg-[#FDFDE3] text-sdc-navy"
                         }`}
                       >
@@ -656,14 +758,15 @@ export default async function MonthlyEtcPage({
                       >
                         {job.jobName}
                       </td>
-                      {visibleCols.map((s) => {
+                      {visibleCols.map((s, sIdx) => {
+                        const edge = edgeFor(s.code, sIdx);
                         const entry = entryByCode.get(s.code);
                         if (!entry) {
-                          return SUB_COLUMNS.map((col) => (
+                          return SUB_COLUMNS.map((col, ci) => (
                             <td
                               key={`${s.code}-${col}`}
-                              className={`border-l border-sdc-border px-2 py-1 text-center ${
-                                col === "Prior ETC" ? "bg-[#5E91D3] text-white" : `${subColBodyBg(col)} text-sdc-gray-400`
+                              className={`${ci === 0 ? edge : "border-l border-sdc-border"} px-2 py-1 text-center ${
+                                col === "Prior ETC" ? "bg-[#5E91D3] text-sdc-gray-700" : `${subColBodyBg(col)} text-sdc-gray-400`
                               }`}
                             >
                               —
@@ -687,16 +790,19 @@ export default async function MonthlyEtcPage({
 
                         return (
                           <Fragment key={s.code}>
-                            <td className="border-l border-sdc-border bg-[#5E91D3] px-1 py-1 text-right text-xs text-white">
+                            <td className={`${edge} bg-[#5E91D3] px-1 py-1 text-right text-xs text-sdc-gray-700`}>
                               {wholeNum(prior)}
                             </td>
                             <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1`}>
+                              {/* Raw (round2) defaultValue, NOT wholeNum — the input's value is
+                                  what submitMonth writes back, so a rounded default would
+                                  permanently degrade Power BI's decimal hours on every submit. */}
                               <input
                                 type="number"
                                 step="0.01"
                                 min="0"
                                 name={`hoursWorked__${entry.id}`}
-                                defaultValue={wholeNum(worked)}
+                                defaultValue={String(round2(worked))}
                                 disabled={locked}
                                 aria-label={`Hours worked, ${job.jobName}, ${s.name}`}
                                 className="w-12 rounded-md border border-transparent bg-transparent px-1.5 py-1 text-right text-xs outline-none focus:border-sdc-blue focus:bg-white focus:shadow-sm disabled:text-sdc-gray-400"
@@ -713,7 +819,7 @@ export default async function MonthlyEtcPage({
                               <EtcDraftInput
                                 entryId={entry.id}
                                 name={`newEtcOverride__${entry.id}`}
-                                defaultValue={draft != null ? String(draft) : worked === 0 ? wholeNum(suggested) : undefined}
+                                defaultValue={draft != null ? String(draft) : worked === 0 ? String(round2(suggested)) : undefined}
                                 placeholder={worked === 0 || draft != null ? undefined : wholeNum(suggested)}
                                 disabled={locked}
                                 ariaLabel={`New ETC override, ${job.jobName}, ${s.name}`}
@@ -731,11 +837,11 @@ export default async function MonthlyEtcPage({
                       {(() => {
                         const partsCostEntry = entryByCode.get(PARTS_COST_SECTION);
                         if (!partsCostEntry) {
-                          return PARTS_COST_SUB_COLUMNS.map((col) => (
+                          return PARTS_COST_SUB_COLUMNS.map((col, ci) => (
                             <td
                               key={`parts-cost-${col}`}
-                              className={`border-l border-sdc-border px-2 py-1 text-center text-sdc-gray-400 ${
-                                col === "Prior ETC" ? "bg-[#5E91D3] text-white" : subColBodyBg(col) || "bg-sdc-gray-50"
+                              className={`${ci === 0 ? PHASE_EDGE : "border-l border-sdc-border"} px-2 py-1 text-center text-sdc-gray-400 ${
+                                col === "Prior ETC" ? "bg-[#5E91D3] text-sdc-gray-700" : subColBodyBg(col) || "bg-sdc-gray-50"
                               }`}
                             >
                               —
@@ -757,7 +863,7 @@ export default async function MonthlyEtcPage({
 
                         return (
                           <Fragment key="parts-cost">
-                            <td className="border-l border-sdc-border bg-[#5E91D3] px-1 py-1 text-right text-xs text-white">
+                            <td className={`${PHASE_EDGE} bg-[#5E91D3] px-1 py-1 text-right text-xs text-sdc-gray-700`}>
                               {currency(prior)}
                             </td>
                             <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1`}>
@@ -775,7 +881,7 @@ export default async function MonthlyEtcPage({
                               <EtcDraftInput
                                 entryId={partsCostEntry.id}
                                 name={`newEtcOverride__${partsCostEntry.id}`}
-                                defaultValue={draftCost != null ? String(draftCost) : spent === 0 ? wholeNum(suggestedCost) : undefined}
+                                defaultValue={draftCost != null ? String(draftCost) : spent === 0 ? String(round2(suggestedCost)) : undefined}
                                 placeholder={spent === 0 || draftCost != null ? undefined : wholeNum(suggestedCost)}
                                 disabled={locked}
                                 ariaLabel={`New ETC cost override, ${job.jobName}, Parts Cost`}
@@ -790,7 +896,7 @@ export default async function MonthlyEtcPage({
                           </Fragment>
                         );
                       })()}
-                      {visibleGroups.map((group) => {
+                      {visibleGroups.map((group, gi) => {
                         const hoursLeft = totals[group].prior - totals[group].worked;
                         const diff = hoursLeft - totals[group].newEtc;
                         groupGrandTotals[group].prior += totals[group].prior;
@@ -798,7 +904,7 @@ export default async function MonthlyEtcPage({
                         groupGrandTotals[group].newEtc += totals[group].newEtc;
                         return (
                           <Fragment key={group}>
-                            <td className="border-l border-sdc-border bg-[#5E91D3] px-1 py-1 text-right text-xs text-white">
+                            <td className={`${gi === 0 ? PHASE_EDGE : "border-l border-sdc-border"} bg-[#5E91D3] px-1 py-1 text-right text-xs text-sdc-gray-700`}>
                               {wholeNum(totals[group].prior)}
                             </td>
                             <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1 text-right text-xs text-sdc-gray-500`}>
@@ -824,9 +930,36 @@ export default async function MonthlyEtcPage({
                             `${edge ? STD_EDGE : "border-l border-sdc-border"} px-2 py-1 text-right text-xs text-sdc-navy`;
                           return (
                             <Fragment key="standards">
-                              <td className={cell(true)}>{wholeNum(std.engrRate)}</td>
-                              <td className={cell(false)}>{wholeNum(std.shopRate)}</td>
-                              <td className={cell(false)}>{std.partsMarkup}</td>
+                              <td className={cell(true)}>
+                                <ExecutionRateInput
+                                  jobId={job.id}
+                                  field="engrRate"
+                                  defaultValue={wholeNum(std.engrRate)}
+                                  disabled={standardSheetSubmitted}
+                                  ariaLabel={`ENGR rate, ${job.jobName}`}
+                                  className="w-full border-none bg-transparent text-right text-xs outline-none"
+                                />
+                              </td>
+                              <td className={cell(false)}>
+                                <ExecutionRateInput
+                                  jobId={job.id}
+                                  field="shopRate"
+                                  defaultValue={wholeNum(std.shopRate)}
+                                  disabled={standardSheetSubmitted}
+                                  ariaLabel={`Shop rate, ${job.jobName}`}
+                                  className="w-full border-none bg-transparent text-right text-xs outline-none"
+                                />
+                              </td>
+                              <td className={cell(false)}>
+                                <ExecutionRateInput
+                                  jobId={job.id}
+                                  field="partsMarkup"
+                                  defaultValue={std.partsMarkup.toString()}
+                                  disabled={standardSheetSubmitted}
+                                  ariaLabel={`Parts markup, ${job.jobName}`}
+                                  className="w-full border-none bg-transparent text-right text-xs outline-none"
+                                />
+                              </td>
                               <td className={`${cell(false)} bg-sdc-blue-light/10`}>{wholeNum(std.etcEngineering)}</td>
                               <td className={`${cell(false)} bg-sdc-blue-light/10`}>{wholeNum(std.etcShop)}</td>
                               <td className={`${cell(false)} bg-sdc-blue-light/10`}>{currency(std.etcParts)}</td>
@@ -864,13 +997,13 @@ export default async function MonthlyEtcPage({
                     <td className="sticky left-0 z-10 bg-sdc-gray-100 px-3 py-2" colSpan={3}>
                       Total
                     </td>
-                    {visibleCols.map((s) => {
+                    {visibleCols.map((s, sIdx) => {
                       const t = sectionGrandTotals.get(s.code)!;
                       const hoursLeft = t.prior - t.worked;
                       const diff = hoursLeft - t.newEtc;
                       return (
                         <Fragment key={s.code}>
-                          <td className="border-l border-sdc-border bg-[#5E91D3] px-1 py-1 text-right text-xs text-white">{wholeNum(t.prior)}</td>
+                          <td className={`${edgeFor(s.code, sIdx)} bg-[#5E91D3] px-1 py-1 text-right text-xs text-sdc-gray-700`}>{wholeNum(t.prior)}</td>
                           <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1 text-right text-xs text-sdc-navy`}>{wholeNum(t.worked)}</td>
                           <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-1 py-1 text-right text-xs text-sdc-navy`}>{wholeNum(hoursLeft)}</td>
                           <td className={`border-l border-sdc-border ${newEtcBg(true)} px-1 py-1 text-right text-xs text-sdc-navy`}>{wholeNum(t.newEtc)}</td>
@@ -884,7 +1017,7 @@ export default async function MonthlyEtcPage({
                       const diffCost = moneyLeft - t.newEtc;
                       return (
                         <Fragment key="parts-cost-total">
-                          <td className="border-l border-sdc-border bg-[#5E91D3] px-1 py-1 text-right text-xs text-white">{currency(t.prior)}</td>
+                          <td className={`${PHASE_EDGE} bg-[#5E91D3] px-1 py-1 text-right text-xs text-sdc-gray-700`}>{currency(t.prior)}</td>
                           <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1 text-right text-xs text-sdc-navy`}>{currency(t.worked)}</td>
                           <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-1 py-1 text-right text-xs text-sdc-navy`}>{currency(moneyLeft)}</td>
                           <td className={`border-l border-sdc-border ${newEtcBg(true)} px-1 py-1 text-right text-xs text-sdc-navy`}>{currency(t.newEtc)}</td>
@@ -892,13 +1025,13 @@ export default async function MonthlyEtcPage({
                         </Fragment>
                       );
                     })()}
-                    {visibleGroups.map((group) => {
+                    {visibleGroups.map((group, gi) => {
                       const t = groupGrandTotals[group];
                       const hoursLeft = t.prior - t.worked;
                       const diff = hoursLeft - t.newEtc;
                       return (
                         <Fragment key={group}>
-                          <td className="border-l border-sdc-border bg-[#5E91D3] px-1 py-1 text-right text-xs text-white">{wholeNum(t.prior)}</td>
+                          <td className={`${gi === 0 ? PHASE_EDGE : "border-l border-sdc-border"} bg-[#5E91D3] px-1 py-1 text-right text-xs text-sdc-gray-700`}>{wholeNum(t.prior)}</td>
                           <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1 text-right text-xs text-sdc-blue-dark`}>{wholeNum(t.worked)}</td>
                           <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-1 py-1 text-right text-xs text-sdc-blue-dark`}>{wholeNum(hoursLeft)}</td>
                           <td className={`border-l border-sdc-border ${newEtcBg(true)} px-1 py-1 text-right text-xs text-sdc-blue-dark`}>{wholeNum(t.newEtc)}</td>

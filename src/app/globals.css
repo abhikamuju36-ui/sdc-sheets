@@ -34,9 +34,9 @@
   --sdc-green-text: #4a7d0d;
   --sdc-gray-50: #fafafa;
   --sdc-gray-100: #f2f2f2;
-  --sdc-gray-400: #8c8c8c;
-  --sdc-gray-600: #666666;
-  --sdc-gray-700: #4d4d4d;
+  --sdc-gray-400: #3d3d3d;
+  --sdc-gray-600: #2b2b2b;
+  --sdc-gray-700: #231f20;
 }
 
 @theme inline {
@@ -104,24 +104,69 @@ input[type="number"]::-webkit-outer-spin-button {
  * Excel's active-cell outline) instead of a floating rounded box. The
  * attribute selectors give these rules enough specificity to override the
  * inputs' own Tailwind sizing/rounding utilities without !important. */
-td:has(> input[type="number"]:not([disabled])) {
+/* A plain <input> with no `type` attribute renders as text but doesn't match
+ * `[type="text"]` — cover both forms so every grid text field is caught. */
+/* height: 1px is a deliberate table-layout hack, not a real constraint — a
+ * td's height is normally "auto" (sized to content), and percentage heights
+ * on children don't resolve against an auto height, so the input's
+ * height:100% below was silently falling back to its own content height and
+ * leaving a gap above/below. Giving the td a nominal 1px height doesn't
+ * shrink the row (it still grows to fit content) but makes it a definite
+ * height, so height:100% on the input now actually fills the cell. */
+td:has(> input:not([type]):not([disabled]), > input[type="text"]:not([disabled]), > input[type="number"]:not([disabled]), > select:not([disabled])) {
   padding: 0;
+  height: 1px;
 }
-td > input[type="number"] {
-  width: 100%;
+/* !important here is deliberate: grid cells often reuse the shared INPUT
+ * classname (rounded border + focus ring, meant for standalone form fields),
+ * whose Tailwind utility classes would otherwise outrank these plain-element
+ * selectors and leave a floating boxed/ring look inside the cell. */
+td > input:not([type]),
+td > input[type="text"],
+td > input[type="number"],
+td > select {
+  width: 100% !important;
   height: 100%;
   min-width: 3.5rem;
-  border-radius: 0;
-  border: none;
-  box-shadow: none;
+  border-radius: 0 !important;
+  border: none !important;
+  box-shadow: none !important;
   padding: 0.25rem 0.5rem;
   background: transparent;
 }
-td > input[type="number"]:focus {
+td > input:not([type]):focus,
+td > input[type="text"]:focus,
+td > input[type="number"]:focus,
+td > select:focus {
   outline: 2px solid var(--sdc-blue);
   outline-offset: -2px;
   background: #fff;
-  box-shadow: none;
+  box-shadow: none !important;
+}
+
+/* Excel-style row selection: clicking a row's "#" cell (RowSelect.tsx)
+ * toggles this class on the <tr>, highlighting the whole row until another
+ * row is selected or the same one is clicked again. `tr.row-selected > td`
+ * is a compound selector with higher specificity than any single Tailwind
+ * utility class (e.g. a cell's own bg-* color), so it reliably overlays every
+ * cell without needing !important — same mechanism as the table's other
+ * cross-cutting rules (borders, sticky-column fills).
+ * An inset box-shadow, not background-color, does the tinting: box-shadow
+ * paints on top of whatever background-color/image the cell already has but
+ * (per the CSS painting order) still underneath its text — a flat
+ * background-color override was replacing strong cells like "Prior ETC"
+ * (dark blue bg + white text) with the pale selection tint, leaving their
+ * white text unreadably faint. The translucent wash keeps every cell's own
+ * color legible while still reading as clearly selected. */
+tr.row-selected > td {
+  box-shadow: inset 0 0 0 9999px rgba(37, 99, 235, 0.16);
+  border-top: 2px solid #2b2b2b;
+  border-bottom: 2px solid #2b2b2b;
+}
+tr.row-selected > td:first-child {
+  background-color: var(--sdc-green);
+  color: #fff;
+  font-weight: 700;
 }
 
 /* Bounded table wrappers (data grids with sticky headers/columns) get their

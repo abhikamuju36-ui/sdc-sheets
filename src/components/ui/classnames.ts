@@ -34,7 +34,7 @@ export const TABLE_ROW_HOVER = "transition-colors hover:bg-sdc-blue-light/40";
 // columns/headers. With separate borders each cell owns its bottom+left edge
 // and they travel with the cell; border-spacing-0 keeps the grid seamless.
 export const TABLE_GRID =
-  "border-separate border-spacing-0 [&_th]:border-b [&_th]:border-l [&_th]:border-sdc-border [&_td]:border-b [&_td]:border-l [&_td]:border-sdc-border-soft [&_td]:tabular-nums";
+  "border-separate border-spacing-0 [&_th]:border-b [&_th]:border-l [&_th]:border-[#2b2b2b] [&_td]:border-b [&_td]:border-l [&_td]:border-[#2b2b2b] [&_td]:tabular-nums [&_td]:font-semibold";
 
 // Table wrapper — sharp corners (not CARD_BASE's rounded-xl) so the grid's
 // straight gridlines run flush to the container edge, like a real spreadsheet.

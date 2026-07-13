@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { etcActiveJobFilter } from "@/lib/job-filters";
+import { etcActiveJobFilter, validJobTypeFilter } from "@/lib/job-filters";
 
 // The single source of truth for "which jobs belong to an ETC month" — used by
 // the Monthly ETC grid AND the Standard Sheet so both always list the exact
@@ -20,7 +20,10 @@ export async function getEtcMonthJobWhere(month: string): Promise<{ where: Prism
   ]);
   const monthIsLocked = entryCount > 0 && pendingCount === 0;
   return {
-    where: monthIsLocked ? { etcEntries: { some: { month } } } : etcActiveJobFilter,
+    // The locked branch still applies the type gate — app-seeded entries all
+    // came through etcActiveJobFilter, but the Power BI history backfill can
+    // create entries on type-less jobs, and those must never render anywhere.
+    where: monthIsLocked ? { etcEntries: { some: { month } }, ...validJobTypeFilter } : etcActiveJobFilter,
     monthIsLocked,
   };
 }

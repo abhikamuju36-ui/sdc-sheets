@@ -387,18 +387,18 @@ export default async function JobDetailPage({
                 <thead>
                   <tr className={TABLE_HEADER_ROW}>
                     <th className="px-4 py-3">Section</th>
-                    <th className="px-4 py-3">Quoted</th>
-                    <th className="px-4 py-3">Actual Historical</th>
-                    <th className="px-4 py-3">Estimate to Complete</th>
+                    <th className="px-4 py-3 text-right">Quoted</th>
+                    <th className="px-4 py-3 text-right">Actual Historical</th>
+                    <th className="px-4 py-3 text-right">Estimate to Complete</th>
                   </tr>
                 </thead>
                 <tbody>
                   {estimatedHours.map((eh, i) => (
                     <tr key={eh.id} className={i % 2 === 1 ? "bg-sdc-gray-50/60" : ""}>
                       <td className="px-4 py-2 font-medium text-sdc-navy">{eh.section}</td>
-                      <td className="px-4 py-2">{eh.quotedHours.toString()}</td>
-                      <td className="px-4 py-2">{eh.actualHistoricalHours.toString()}</td>
-                      <td className="px-4 py-2">{eh.estimateToCompleteHours.toString()}</td>
+                      <td className="px-4 py-2 text-right">{eh.quotedHours.toString()}</td>
+                      <td className="px-4 py-2 text-right">{eh.actualHistoricalHours.toString()}</td>
+                      <td className="px-4 py-2 text-right">{eh.estimateToCompleteHours.toString()}</td>
                     </tr>
                   ))}
                 </tbody>

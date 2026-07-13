@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { suggestNewEtc } from "@/lib/etc";
 import { ETC_SECTIONS, ETC_TRACKED_CODES, PARTS_COST_SECTION } from "@/lib/sections";
 
 const SECTION_BILLING_GROUP = new Map(ETC_SECTIONS.map((s) => [s.code, s.billingGroup]));
@@ -18,14 +19,23 @@ export async function getExecutionEtcByJob(jobIds: number[], month: string): Pro
 
   const entries = await prisma.etcEntry.findMany({
     where: { jobId: { in: jobIds }, month },
-    select: { jobId: true, section: true, newEtc: true },
+    select: { jobId: true, section: true, newEtc: true, newEtcDraft: true, needsReview: true, priorEtc: true, hoursWorked: true },
   });
 
   for (const e of entries) {
     if (e.section !== PARTS_COST_SECTION && !ETC_TRACKED_CODES.has(e.section)) continue;
 
     const totals = result.get(e.jobId) ?? { engineering: 0, shop: 0, parts: 0 };
-    const value = Number(e.newEtc);
+    // Same "effective New ETC" rule the Monthly ETC grid renders with:
+    // confirmed value once submitted; before that, the manager's autosaved
+    // draft if any, else the live suggestion. Stored newEtc on an
+    // unsubmitted entry is just the seed-time value, so using it made the
+    // Standard Sheet disagree with the grid until the month was submitted.
+    const value = !e.needsReview
+      ? Number(e.newEtc)
+      : e.newEtcDraft != null
+        ? Number(e.newEtcDraft)
+        : suggestNewEtc(Number(e.priorEtc), Number(e.hoursWorked));
     if (e.section === PARTS_COST_SECTION) {
       totals.parts += value;
     } else if (SECTION_BILLING_GROUP.get(e.section) === "Engineering") {

@@ -31,10 +31,7 @@ export default async function StandardSheetLayout({ children }: { children: Reac
 
   return (
     <div className="w-full p-8">
-      <PageTitle>Standard Sheet</PageTitle>
-      <p className="mt-1 mb-6 text-sm text-sdc-gray-400">
-        Standard fee tracking — Execution Rates.
-      </p>
+      <PageTitle className="mb-6">Standard Sheet</PageTitle>
       {children}
     </div>
   );

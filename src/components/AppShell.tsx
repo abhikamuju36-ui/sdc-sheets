@@ -1,5 +1,6 @@
 import Sidebar from "@/components/Sidebar";
 import ExcelCellFocus from "@/components/ExcelCellFocus";
+import RowSelect from "@/components/RowSelect";
 
 export default function AppShell({
   children,
@@ -17,6 +18,7 @@ export default function AppShell({
       <Sidebar userEmail={userEmail} role={role} signOutAction={signOutAction} />
       <main className="min-w-0 flex-1 bg-background">{children}</main>
       <ExcelCellFocus />
+      <RowSelect />
     </div>
   );
 }

@@ -151,6 +151,13 @@ export async function submitMonth(month: string, formData: FormData) {
   const qualifying = await prisma.job.findMany({ where: etcActiveJobFilter, select: { id: true } });
   const qualifyingIds = new Set(qualifying.map((j) => j.id));
   const allEntries = await prisma.etcEntry.findMany({ where: { month } });
+
+  // A locked month is frozen history — a stale tab re-POSTing this form (or a
+  // direct action call) must never silently rewrite it. Same guard as
+  // syncPowerBiForEtc/clearMonth; reopenMonth (admin-only) is the way back in.
+  if (isMonthLocked(allEntries)) {
+    throw new Error(`${month} is already submitted and locked — reopen it first if a correction is needed.`);
+  }
   const renderable = (section: string) => section === PARTS_COST_SECTION || ETC_TRACKED_CODES.has(section);
   const staleIds = allEntries
     .filter((e) => e.needsReview && (!qualifyingIds.has(e.jobId) || !renderable(e.section)))
@@ -163,7 +170,7 @@ export async function submitMonth(month: string, formData: FormData) {
     throw new Error(`Nothing to submit for ${month} — no entries on currently active jobs.`);
   }
 
-  const updates: { id: number; priorEtc: number; hoursWorked: number; newEtc: number }[] = [];
+  const inputs: { id: number; hoursWorked: number; override: number | null }[] = [];
 
   for (const entry of entries) {
     const rawHours = formData.get(`hoursWorked__${entry.id}`);
@@ -176,39 +183,50 @@ export async function submitMonth(month: string, formData: FormData) {
     }
 
     const rawOverride = formData.get(`newEtcOverride__${entry.id}`);
-    let newEtc: number;
+    let override: number | null = null;
     if (rawOverride !== null && rawOverride !== "") {
       const overrideVal = Number(rawOverride);
       if (!Number.isFinite(overrideVal) || overrideVal < 0) {
         throw new Error(`Invalid New ETC override "${rawOverride}" for entry ${entry.id} (section ${entry.section}).`);
       }
-      newEtc = round2(overrideVal);
-    } else {
-      newEtc = round2(suggestNewEtc(Number(entry.priorEtc), hoursWorked));
+      override = round2(overrideVal);
     }
 
-    updates.push({ id: entry.id, priorEtc: Number(entry.priorEtc), hoursWorked, newEtc });
+    inputs.push({ id: entry.id, hoursWorked, override });
   }
 
-  await prisma.$transaction(
+  // Prior ETC is re-read INSIDE the transaction: a concurrent Run Report can
+  // rewrite priorEtc between the validation read above and the write below,
+  // and the suggestion/Hours Left must be computed from what actually gets
+  // locked, not a stale pre-read.
+  const updates = await prisma.$transaction(
     async (tx) => {
       if (staleIds.length > 0) {
         await tx.etcEntry.deleteMany({ where: { id: { in: staleIds } } });
       }
-      for (const u of updates) {
+      const fresh = await tx.etcEntry.findMany({ where: { id: { in: inputs.map((i) => i.id) } } });
+      const freshById = new Map(fresh.map((e) => [e.id, e]));
+      const written: { id: number; priorEtc: number; hoursWorked: number; newEtc: number }[] = [];
+      for (const u of inputs) {
+        const entry = freshById.get(u.id);
+        if (!entry) continue; // deleted since validation — nothing to lock
+        const priorEtc = Number(entry.priorEtc);
+        const newEtc = u.override ?? round2(suggestNewEtc(priorEtc, u.hoursWorked));
         await tx.etcEntry.update({
           where: { id: u.id },
           data: {
             hoursWorked: u.hoursWorked,
-            hoursLeftCalc: round2(calcHoursLeft(u.priorEtc, u.hoursWorked)),
-            newEtc: u.newEtc,
+            hoursLeftCalc: round2(calcHoursLeft(priorEtc, u.hoursWorked)),
+            newEtc,
             newEtcDraft: null, // draft is consumed by the submission
             needsReview: false,
             submittedAt: new Date(),
             ...(userId ? { enteredById: Number(userId) } : {}),
           },
         });
+        written.push({ id: u.id, priorEtc, hoursWorked: u.hoursWorked, newEtc });
       }
+      return written;
     },
     { timeout: 20000 },
   );
@@ -251,6 +269,8 @@ export async function saveNewEtcDraft(entryId: number, value: number | null): Pr
     where: { id: entryId },
     data: { newEtcDraft: value === null ? null : round2(value) },
   });
+
+  revalidatePath("/etc");
 
   await logAudit({
     action: "etc.saveNewEtcDraft",
