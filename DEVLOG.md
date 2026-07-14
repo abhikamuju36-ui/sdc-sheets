@@ -309,3 +309,83 @@ Fixed by:
   1; Dan on App 2) — **real password resets still needed before handoff to
   actual users.**
 - No production hosting yet — both run via `npm run dev` locally.
+
+---
+
+## 10. Data-accuracy audit, corruption fixes, and production hardening (2026-07-14)
+
+A full-day accuracy audit against the real manager-signed workbooks
+(`Old ETC Sheets/` and `old standard sheets/` — April/May/June 2026
+snapshots), followed by end-to-end testing that found and fixed four distinct
+historical-month corruption vectors. Summary (full detail in the session
+memory files under `reopen-run-report-corruption-fix` and friends):
+
+### Data corrections
+- **June 2026 ETC** had drifted (163 wrong cells, one job's data missing, two
+  unreviewed jobs' quoted costs injected) because Power BI hadn't archived
+  June yet and a test submission froze live/suggested values. Rebuilt
+  April/May/June `EtcEntry` from the workbooks' `ETC Export`/`Managers Fill
+  Out` tabs — verified 0 mismatches per month afterward.
+- **Standard Fees.xlsx itself was found stale** (its per-job Execution ETC
+  VLOOKUP never refreshed — byte-identical across 3 months). The app's live
+  computation was correct; froze `StandardSheetSnapshot` for April–June from
+  it, pulling per-job Contingency (the one live column) from the workbook.
+- **CategoryPool history** verified against Power BI's `Standard Fees` archive
+  (0 mismatches, 2025-10…2026-03). 2025-06's `needsReview` migration oversight
+  fixed. July 2026 started via the real workflow (carry-forward verified).
+
+### Corruption vectors found by testing, all fixed
+1. **Run Report on a reopened historical month** re-seeded/pruned it against
+   TODAY's job roster and actuals (proven: 42 real entries deleted, 62 wrong
+   ones injected). → `isSafeForLiveEtcSync` guard (`etc.ts`); Run Report and
+   Clear ETC now refuse any month but the single current one.
+2. **Submit and Lock on a reopened historical month** pruned entries for
+   since-completed jobs (366→323 rows, proven live). → `getEtcMonthJobWhere`
+   renders historical months from their own entries even while unlocked;
+   `submitMonth` never prunes historical months.
+3. **Empty New ETC inputs on resubmit** were replaced with recomputed
+   suggestions, erasing manager overrides. → historical `submitMonth` keeps
+   stored values when inputs are empty/missing.
+4. **The grid auto-fill seeded zero-worked cells with Prior ETC** (and blank
+   for worked cells), so a no-touch UI resubmit posted wrong overrides (135
+   cells at risk in April; ~120 corrupted once, restored). → `EtcSectionCells`
+   /Parts Cost inputs seed from the stored confirmed value on historical
+   months (`initialConfirmed`); reopen+resubmit proven a true no-op through
+   the real `submitMonth`.
+
+### Other hardening in this batch
+- `StandardSheetLive` crashed on month switches (state seeded once from
+  props; different month = different job set → `rates[jobId]` undefined).
+  Fixed with safe fallbacks + backfill effect, AND at the root: both grids
+  now remount per month (`key={month}`), which also fixes stale typed values
+  surviving soft navigation in the ETC grid.
+- Historical sync (`sync-etc-history.ts`) now detects months that are locked
+  in-app but have since gained a real Power BI archive, and flags them in the
+  audit log (`monthsOwnedWithPbiHistoryNow`, pools too) instead of silently
+  trusting a premature lock forever.
+- `middleware.ts` → `proxy.ts` (Next 16 deprecation); auth gating verified
+  intact (307 to /login, /brand + /login still open).
+- Audit Log gate brought up to the Standard Sheet gate's standard: refuses
+  the default password in production, HMAC unlock cookie, constant-time
+  compares.
+- `?month=` params validated on /etc and /standard-sheet; all Standard Sheet
+  month actions go through one validating choke point, so a crafted month
+  can never freeze snapshot rows under a garbage key.
+- `.gitignore` now excludes the local `.xlsx` source workbooks and design
+  folders (company financial data stays out of the repo).
+
+### Test coverage added
+- `tests/etc.test.ts` grew to 23 tests: `isSafeForLiveEtcSync`,
+  `hasPublishedHistory`, `groupStandardFeesRows` regression suites.
+- One-off (not committed) harnesses exercised every server action against the
+  real DB with request-scoped bits stubbed — 37/37 checks passed (validation,
+  guards, writes, cleanup) — plus data-helper edge cases and a full
+  reopen→submit round-trip through the real `submitMonth`.
+
+### Known remaining gaps (deliberate, documented)
+- `ExecutionRate` is not month-scoped: editing a rate affects the open
+  month's live view (frozen snapshots immune). Schema change deferred.
+- June 2026 has no independent source of truth until Power BI archives it —
+  treat as provisional; "Sync History" will flag it when the archive lands.
+- Cost Actual Historical stays frozen at migration values (no verified
+  Power BI measure) — unchanged policy.

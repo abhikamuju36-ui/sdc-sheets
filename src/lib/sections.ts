@@ -52,16 +52,6 @@ export const ETC_SECTIONS: { code: string; name: string; phase: string; billingG
     billingGroup: ENGINEERING_CODES.has(s.code) ? "Engineering" : "Shop",
   }));
 
-export const ETC_PHASE_GROUPS = ETC_SECTIONS.reduce<{ phase: string; count: number }[]>((groups, s) => {
-  const last = groups[groups.length - 1];
-  if (last && last.phase === s.phase) {
-    last.count += 1;
-  } else {
-    groups.push({ phase: s.phase, count: 1 });
-  }
-  return groups;
-}, []);
-
 export const ETC_TRACKED_CODES = new Set(ETC_SECTIONS.map((s) => s.code));
 
 // "Parts Cost" is a real block in the real sheet — same 5-column shape

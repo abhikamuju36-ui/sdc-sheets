@@ -22,32 +22,32 @@ async function createJob(formData: FormData) {
 
 export default function NewJobPage() {
   return (
-    <div className="mx-auto w-full max-w-lg p-8">
-      <PageTitle className="mb-6">New Job</PageTitle>
-      <form action={createJob} className="space-y-4">
-        <div className={`${card("p-5")} space-y-4`}>
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-sdc-gray-400">Job Info</p>
+    <div className="w-full max-w-[560px] px-8 py-10 md:px-13 md:py-11">
+      <PageTitle className="mb-7">New Job</PageTitle>
+      <form action={createJob} className="space-y-5">
+        <div className={`${card("p-6.5")} space-y-4`}>
+          <p className="text-[11px] font-semibold tracking-wide text-sdc-gray-400 uppercase">Job Info</p>
           <div>
             <label className={LABEL}>Job Id</label>
-            <input name="jobId" required className={`mt-1 w-full ${INPUT}`} />
+            <input name="jobId" required className={`mt-1.5 w-full ${INPUT}`} />
           </div>
           <div>
             <label className={LABEL}>Job Name</label>
-            <input name="jobName" required className={`mt-1 w-full ${INPUT}`} />
+            <input name="jobName" required className={`mt-1.5 w-full ${INPUT}`} />
           </div>
           <div>
             <label className={LABEL}>PO Start Date</label>
-            <input type="date" name="poStartDate" className={`mt-1 w-full ${INPUT}`} />
+            <input type="date" name="poStartDate" className={`mt-1.5 w-full ${INPUT}`} />
           </div>
         </div>
 
-        <div className={`${card("p-5")} space-y-4`}>
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-sdc-gray-400">Classification</p>
+        <div className={`${card("p-6.5")} space-y-4`}>
+          <p className="text-[11px] font-semibold tracking-wide text-sdc-gray-400 uppercase">Classification</p>
           <div>
             <label className={LABEL}>
               Type <span className="text-red-600">*</span>
             </label>
-            <select name="type" required className={`mt-1 w-full ${INPUT}`}>
+            <select name="type" required className={`mt-1.5 w-full ${INPUT}`}>
               <option value="">Select a type…</option>
               {VALID_JOB_TYPES.map((t) => (
                 <option key={t} value={t}>
@@ -55,11 +55,11 @@ export default function NewJobPage() {
                 </option>
               ))}
             </select>
-            <p className="mt-1 text-[11px] text-sdc-gray-400">Required — select a job type before saving.</p>
+            <p className="mt-1.5 text-[11px] text-sdc-gray-400">Required — select a job type before saving.</p>
           </div>
         </div>
 
-        <div className="flex justify-end gap-3">
+        <div className="flex justify-end gap-2.5">
           <Link href="/jobs" className={BUTTON_SECONDARY}>
             Cancel
           </Link>

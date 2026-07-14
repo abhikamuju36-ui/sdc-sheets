@@ -78,8 +78,15 @@ model Job {
   startDate             DateTime? // confirmed from "Estimated Hours" tab — distinct from poStartDate
   completeDate          DateTime?
   includeInTypeCalc     Boolean   @default(false)
+  billable              Boolean   @default(true) // Billable vs. Non-Billable — manager-set, no upstream sync touches this
   costQuoted            Decimal?  @db.Decimal(12, 2)
   costActualHistorical  Decimal?  @db.Decimal(12, 2)
+  // Same manual-override protection as EstimatedHours.quotedHoursManuallyEdited
+  // — a manager's edit on the Projects tab must survive the next sync instead
+  // of being silently overwritten. customer is touched by syncFromTotalEto,
+  // costQuoted by syncQuotedFromPowerBi; nothing else on this model syncs.
+  customerManuallyEdited    Boolean @default(false)
+  costQuotedManuallyEdited  Boolean @default(false)
   // Live from TotalETO (vwProjectActualsVSEstimates) via manual sync button.
   totEtoEstEngHours     Decimal?  @db.Decimal(10, 2)
   totEtoActEngHours     Decimal?  @db.Decimal(10, 2)
@@ -146,6 +153,11 @@ model EstimatedHours {
   quotedHours              Decimal  @db.Decimal(10, 2) @default(0)
   actualHistoricalHours    Decimal  @db.Decimal(10, 2) @default(0)
   estimateToCompleteHours  Decimal  @db.Decimal(10, 2) @default(0)
+  // Set when a manager edits quotedHours by hand on the Projects tab — the
+  // Power BI sync (syncQuotedFromPowerBi) checks this and skips overwriting
+  // quotedHours on this row so a manual correction can't be silently wiped
+  // out by the next sync run. estimateToCompleteHours keeps syncing either way.
+  quotedHoursManuallyEdited Boolean @default(false)
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt
 

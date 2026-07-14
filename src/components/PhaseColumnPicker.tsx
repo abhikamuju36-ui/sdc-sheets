@@ -63,10 +63,8 @@ export function PhaseColumnPicker({
   return (
     <details ref={detailsRef} className="group relative inline-block">
       <summary
-        className={`flex list-none cursor-pointer select-none items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-medium ${
-          noneChecked
-            ? "border-sdc-border bg-white text-sdc-gray-700 hover:bg-sdc-gray-100"
-            : "border-sdc-blue bg-sdc-blue-light text-sdc-blue-dark"
+        className={`flex list-none cursor-pointer select-none items-center gap-1.5 rounded-full px-3.5 py-[7px] text-[12.5px] font-semibold ${
+          noneChecked ? "bg-sdc-gray-100 text-sdc-gray-600 hover:bg-sdc-gray-100/70" : "bg-sdc-blue-light text-sdc-blue hover:bg-sdc-blue-100/40"
         }`}
       >
         {phase}
@@ -83,7 +81,7 @@ export function PhaseColumnPicker({
           <path d="M3.5 6 L8 10.5 L12.5 6" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </summary>
-      <div className="absolute left-0 top-full z-20 mt-2 w-56 rounded-lg border border-sdc-border bg-white p-2 shadow-lg">
+      <div className="absolute left-0 top-full z-30 mt-2 w-56 rounded-lg border border-sdc-border bg-white p-2 shadow-lg">
         <div className="mb-1 flex items-center justify-between px-1.5 pb-1 text-[11px] text-sdc-gray-400">
           <button type="button" onClick={() => setAll(true)} className="underline hover:text-sdc-navy">
             Select all

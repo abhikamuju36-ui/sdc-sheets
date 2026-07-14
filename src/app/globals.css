@@ -86,6 +86,14 @@ body {
   font-family: var(--font-sans);
 }
 
+/* Uniform 13px text everywhere inside every data table app-wide — overrides
+ * whatever size utility (text-xs, text-[10.5px], text-[9px], etc.) individual
+ * cells/headers/inputs use, per explicit request for consistent table
+ * typography instead of the mix of sizes each page picked independently. */
+table, table * {
+  font-size: 13px !important;
+}
+
 /* Number cells should read like Excel cells — plain values you click and
  * type into, no spinner arrows appearing on hover/focus. Applies to every
  * numeric input app-wide (grid cells and forms alike). */
@@ -134,6 +142,18 @@ td > select {
   padding: 0.25rem 0.5rem;
   background: transparent;
 }
+/* Selects need extra right padding to clear the browser's own dropdown
+ * arrow — without it, wider text (e.g. at the app's 13px table font size)
+ * runs directly under the arrow and reads as overlapping/cut off. The
+ * shared min-width above (3.5rem) is sized for plain inputs; a forced
+ * width:100% opts a select out of the table's normal auto-layout sizing
+ * (percentages don't contribute to intrinsic column width), so without a
+ * wider floor here the narrowest select column (Type: "Duplicate") gets
+ * sized too tight for its own text once the reserved arrow padding is added. */
+td > select {
+  padding-right: 1.5rem;
+  min-width: 5.5rem;
+}
 td > input:not([type]):focus,
 td > input[type="text"]:focus,
 td > input[type="number"]:focus,
@@ -142,6 +162,19 @@ td > select:focus {
   outline-offset: -2px;
   background: #fff;
   box-shadow: none !important;
+}
+
+/* Date grid cells (DateCell.tsx): when empty, hide the native "mm/dd/yyyy"
+ * segment text so the column reads as clean icon-only cells instead of a
+ * wall of placeholder digits — but restore it on focus so there's still
+ * visible feedback while picking/typing a date. Once a real date is set,
+ * DateCell removes this class and the value displays normally. WebKit/
+ * Chromium-only pseudo-elements — Firefox falls back to the native look. */
+input[type="date"].date-empty::-webkit-datetime-edit-fields-wrapper {
+  opacity: 0;
+}
+input[type="date"].date-empty:focus::-webkit-datetime-edit-fields-wrapper {
+  opacity: 1;
 }
 
 /* Excel-style row selection: clicking a row's "#" cell (RowSelect.tsx)

@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { runDax } from "@/lib/powerbi-client";
 import { ETC_TRACKED_CODES, PARTS_COST_SECTION } from "@/lib/sections";
-import { calcHoursLeft, suggestNewEtc, round2 } from "@/lib/etc";
+import { calcHoursLeft, suggestNewEtc, round2, hasPublishedHistory, groupStandardFeesRows } from "@/lib/etc";
 
 // Refreshes historical ETC months from Power BI's "ETC Historical *" measure
 // family — the same numbers the Job Hours Report's "ETC Historical Hours"
@@ -32,13 +32,30 @@ import { calcHoursLeft, suggestNewEtc, round2 } from "@/lib/etc";
 //   and is wiped + rewritten from the measures, so re-running always
 //   converges on what Power BI currently reports (including the still-open
 //   PBI period, which keeps accruing hours until their team closes it).
+//
+// Known gap (found 2026-07-14, see the June 2026 data-correction incident):
+// Power BI only publishes a month's "ETC Historical *" archive several
+// weeks after month-end (April by 5/11, May by 6/10, June by 7/08 — all
+// observed from the real Excel exports). If a month gets Submitted & Locked
+// in the app (e.g. during testing, or before managers finish their real
+// review) *before* Power BI has published its archive for it, that month
+// becomes permanently app-owned and this function will never again try to
+// reconcile it against Power BI's real numbers, even once the archive shows
+// up — silently freezing whatever the live/auto-suggested values were at
+// submit time. This function can't safely auto-overwrite an app-owned month
+// (a genuine manager correction must never be clobbered), but it now
+// detects the situation and reports it via `monthsOwnedWithPbiHistoryNow`
+// so an admin can see it in the audit log and decide whether to reopen and
+// re-run "Sync History" for that specific month.
 export async function syncEtcHistoryFromPowerBi(): Promise<{
   monthsRefreshed: string[];
   monthsSkippedAppOwned: string[];
+  monthsOwnedWithPbiHistoryNow: string[];
   entriesWritten: number;
   unsubmittedFilled: number;
   poolMonthsRefreshed: string[];
   poolRowsWritten: number;
+  poolMonthsOwnedWithPbiHistoryNow: string[];
 }> {
   const periods = (await runDax(`EVALUATE 'Estimated to Complete Period'`)) as {
     "Estimated to Complete Period[ETC Name]": string;
@@ -65,12 +82,26 @@ export async function syncEtcHistoryFromPowerBi(): Promise<{
 
   const monthsRefreshed: string[] = [];
   const monthsSkippedAppOwned: string[] = [];
+  const monthsOwnedWithPbiHistoryNow: string[] = [];
   let entriesWritten = 0;
   let unsubmittedFilled = 0;
 
   for (const period of candidates) {
     if (appOwned.has(period.month)) {
       monthsSkippedAppOwned.push(period.month);
+      // Existence check: has Power BI's archive shown up for this month
+      // since it was locked in the app? If so, the app's numbers may be
+      // stale/wrong (see the gap noted above) — flag it rather than
+      // silently trusting whatever is already stored.
+      const historyRows = (await runDax(`
+        EVALUATE
+        SUMMARIZECOLUMNS(
+          'Job'[Job Id],
+          FILTER(ALL('Estimated to Complete Period'), 'Estimated to Complete Period'[ETC Name] = "${period.name}"),
+          "NewEtc", [ETC Historical Hours]
+        )
+      `)) as { "Job[Job Id]": string; NewEtc: number | null }[];
+      if (hasPublishedHistory(historyRows)) monthsOwnedWithPbiHistoryNow.push(period.month);
       continue;
     }
 
@@ -168,7 +199,7 @@ export async function syncEtcHistoryFromPowerBi(): Promise<{
 
   const pools = await syncCategoryPoolHistory(new Map(candidates.map((p) => [p.name, p.month])), appOwned);
 
-  return { monthsRefreshed, monthsSkippedAppOwned, entriesWritten, unsubmittedFilled, ...pools };
+  return { monthsRefreshed, monthsSkippedAppOwned, monthsOwnedWithPbiHistoryNow, entriesWritten, unsubmittedFilled, ...pools };
 }
 
 const POOL_CATEGORY: Record<string, "ENGINEERING_PM" | "ENGINEERING_WARRANTY" | "SHOP_MANUFACTURING" | "SHOP_WARRANTY"> = {
@@ -202,7 +233,7 @@ interface StandardFeesRow {
 async function syncCategoryPoolHistory(
   monthByPeriodName: Map<string, string>,
   etcAppOwned: Set<string>,
-): Promise<{ poolMonthsRefreshed: string[]; poolRowsWritten: number }> {
+): Promise<{ poolMonthsRefreshed: string[]; poolRowsWritten: number; poolMonthsOwnedWithPbiHistoryNow: string[] }> {
   const [sfRows, periodKeyRows, snapshotMonths] = await Promise.all([
     runDax(`EVALUATE 'Standard Fees'`) as Promise<StandardFeesRow[]>,
     runDax(`
@@ -214,13 +245,15 @@ async function syncCategoryPoolHistory(
   const monthByKey = new Map(periodKeyRows.map((p) => [p.Key, monthByPeriodName.get(p.Name)]));
   const appOwnedPoolMonths = new Set([...etcAppOwned, ...snapshotMonths.map((s) => s.month)]);
 
-  const rowsByMonth = new Map<string, StandardFeesRow[]>();
-  for (const r of sfRows) {
-    const month = monthByKey.get(r["Standard Fees[ETC Period Key]"]);
-    if (!month || appOwnedPoolMonths.has(month)) continue;
-    if (!rowsByMonth.has(month)) rowsByMonth.set(month, []);
-    rowsByMonth.get(month)!.push(r);
-  }
+  // Same gap as the ETC ownership rule above: once a month has a
+  // StandardSheetSnapshot (or app-owned EtcEntry), it's skipped here forever,
+  // even after Power BI later publishes real 'Standard Fees' archive rows for
+  // it. Flag that case instead of silently trusting a frozen submission.
+  const { rowsByMonth, ownedWithHistoryNow: poolMonthsOwnedWithPbiHistoryNow } = groupStandardFeesRows(
+    sfRows,
+    (r) => monthByKey.get(r["Standard Fees[ETC Period Key]"]),
+    appOwnedPoolMonths
+  );
 
   const poolMonthsRefreshed: string[] = [];
   let poolRowsWritten = 0;
@@ -255,7 +288,7 @@ async function syncCategoryPoolHistory(
     poolRowsWritten += data.length;
   }
 
-  return { poolMonthsRefreshed, poolRowsWritten };
+  return { poolMonthsRefreshed, poolRowsWritten, poolMonthsOwnedWithPbiHistoryNow };
 }
 
 const MONTH_NAME_TO_NUM: Record<string, string> = {

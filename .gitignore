@@ -42,3 +42,13 @@ yarn-error.log*
 next-env.d.ts
 
 /src/generated/prisma
+
+# Local source workbooks and design references — company financial data,
+# never committed. Migration/verification scripts read them from disk.
+*.xlsx
+/Old ETC Sheets/
+/old standard sheets/
+/new design/
+
+# Throwaway verification scripts
+/scratch*/

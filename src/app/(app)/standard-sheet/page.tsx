@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { compareJobIds } from "@/lib/job-filters";
 import { getEtcMonthJobWhere } from "@/lib/etc-month-jobs";
 import { getExecutionEtcByJob } from "@/lib/execution-etc";
+import { isValidMonth } from "@/lib/etc";
 import { syncCategoryPoolsFromPowerBi } from "@/lib/sync-powerbi";
 import {
   calcTotalEtcDollars,
@@ -15,38 +16,8 @@ import { revalidatePath } from "next/cache";
 import { logAudit } from "@/lib/audit";
 import { assertStandardSheetUnlocked } from "@/lib/standard-sheet-gate";
 import type { Prisma } from "@prisma/client";
-import { BUTTON_PRIMARY, BUTTON_SECONDARY, TABLE_HEADER_ROW, TABLE_GRID } from "@/components/ui/classnames";
-import { StatusBadge } from "@/components/ui/StatusBadge";
-import { SelectOnFocusInput } from "@/components/SelectOnFocusInput";
-import { MonthSelect } from "@/components/MonthSelect";
-
-const RATE_INPUT_CLASS =
-  "w-12 [appearance:textfield] border-none bg-transparent px-1 py-1 text-right text-xs outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none disabled:text-sdc-gray-400";
-
-// Heavier divider at the start of each named column block (Execution Rates /
-// Execution ETC / Total ETC / Standard Fees / Contingency / Total Standard
-// Fees / Notes) — same weight/treatment as the Monthly ETC grid's phase
-// dividers, for a consistent "major block boundary" look app-wide. `!` forces
-// it to win over TABLE_GRID's blanket `[&_th]:border-l`/`[&_td]:border-l`
-// rules, which — being a class+element selector — otherwise out-specificity
-// a plain utility class and silently reset the border back to the thin default.
-// Matches TABLE_GRID's own gridline color (#2b2b2b, a blackish charcoal)
-// exactly — same color on both the wide border-left and the thin
-// border-bottom means their mitered corner is invisible, instead of the
-// jagged two-tone seam a mismatched divider color made.
-const BLOCK_EDGE = "border-l-[33px]! border-l-[#2b2b2b]!";
-
-function wholeHours(n: number): string {
-  return Math.round(n).toString();
-}
-
-function currency(n: number): string {
-  return n.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
-}
-
-function percent(n: number): string {
-  return (n * 100).toLocaleString(undefined, { maximumFractionDigits: 2 }) + "%";
-}
+import { StandardSheetLive } from "@/components/StandardSheetLive";
+import type { PoolRow, RateRow } from "@/components/StandardSheetLive";
 
 function currentMonth() {
   const d = new Date();
@@ -142,7 +113,11 @@ async function saveContingencyRate(formData: FormData) {
 
 // A submitted month is frozen — server actions must enforce it, not just the
 // UI hiding buttons (a stale tab or crafted request could otherwise mutate it).
+// Also the single choke point every month-scoped action here passes through,
+// so a crafted/garbage month can never reach a write (e.g. freezing snapshot
+// rows under a nonsense month key).
 async function assertMonthNotSubmitted(month: string) {
+  if (!isValidMonth(month)) throw new Error(`"${month}" is not a valid month (expected YYYY-MM).`);
   const submitted = await prisma.standardSheetSnapshot.findFirst({ where: { month }, select: { id: true } });
   if (submitted) throw new Error(`${month} is submitted and frozen — reopen it first.`);
 }
@@ -348,7 +323,9 @@ export default async function StandardSheetPage({
     prisma.standardSheetSnapshot.findMany({ distinct: ["month"], select: { month: true }, orderBy: { month: "desc" } }),
   ]);
   const allMonths = [...new Set([...etcMonths.map((m) => m.month), ...snapshotMonths.map((m) => m.month)])].sort().reverse();
-  const month = monthParam || allMonths[0] || currentMonth();
+  // A malformed ?month= must not flow into queries or (worse) a Submit that
+  // would freeze snapshot rows under a garbage month key.
+  const month = (monthParam && isValidMonth(monthParam) ? monthParam : undefined) || allMonths[0] || currentMonth();
   const submittedMonths = new Set(snapshotMonths.map((m) => m.month));
   const isSubmitted = submittedMonths.has(month);
 
@@ -478,27 +455,16 @@ export default async function StandardSheetPage({
     }
   }
 
-  // Grand totals footer, matching the sheet's SUM row 66.
-  const grand = rows.reduce(
-    (acc, r) => ({
-      totalEtcDollars: acc.totalEtcDollars + r.totalEtcDollars,
-      percentOfTotal: acc.percentOfTotal + r.percentOfTotal,
-      standardFeeEngineering: acc.standardFeeEngineering + r.standardFeeEngineering,
-      standardFeeShop: acc.standardFeeShop + r.standardFeeShop,
-      contingencyAmount: acc.contingencyAmount + r.contingencyAmount,
-      totalStandardFees: acc.totalStandardFees + r.totalStandardFees,
-    }),
-    { totalEtcDollars: 0, percentOfTotal: 0, standardFeeEngineering: 0, standardFeeShop: 0, contingencyAmount: 0, totalStandardFees: 0 }
-  );
-
   const editable = !isSubmitted;
   // Carried-forward pools belong to another month — show them read-only so a
   // Save Pools can't try to write rows that don't exist for the selected month.
   const poolsEditable = editable && !poolsCarriedFrom;
 
-  // "Standard Fees By Department" block (sheet rows 71-108), one display row
-  // per category. Order matches the sheet; the manual-cell default hints come
-  // from the sheet's own margin notes.
+  // "Standard Fees By Department" block (sheet rows 71-108), one row per
+  // category. Order matches the sheet; the manual-cell default hints come
+  // from the sheet's own margin notes. All derived math (New ETC Hours,
+  // Standard Fee, and — cross-linked — every job row's Standard Fee
+  // allocation above) is computed live client-side in StandardSheetLive.
   const POOL_ROWS = [
     { category: "ENGINEERING_PM", group: "Engineering", dept: "PM", hint: "Defaults to 450" },
     { category: "ENGINEERING_WARRANTY", group: "Engineering", dept: "Warranty", hint: "Defaults to Hours Worked This Month" },
@@ -506,414 +472,69 @@ export default async function StandardSheetPage({
     { category: "SHOP_WARRANTY", group: "Shop", dept: "Warranty", hint: "Defaults to Hours Worked This Month" },
   ] as const;
   const poolByCategory = new Map(effectivePools.map((p) => [p.category, p]));
-  const engineeringTotal = ["ENGINEERING_PM", "ENGINEERING_WARRANTY"].reduce(
-    (sum, c) => sum + Number(poolByCategory.get(c as never)?.standardFee ?? 0),
-    0
-  );
-  const shopTotal = ["SHOP_MANUFACTURING", "SHOP_WARRANTY"].reduce(
-    (sum, c) => sum + Number(poolByCategory.get(c as never)?.standardFee ?? 0),
-    0
-  );
+  const poolRowsProp: PoolRow[] = POOL_ROWS.map(({ category, group, dept, hint }) => {
+    const pool = poolByCategory.get(category);
+    return {
+      category,
+      group,
+      dept,
+      hint,
+      data: pool
+        ? {
+            hoursAvailable: Number(pool.hoursAvailable),
+            hoursPulledThisMonth: Number(pool.hoursPulledThisMonth),
+            rate: Number(pool.rate),
+            previousMonthPulledHours: Number(pool.previousMonthPulledHours),
+            newHoursAddedThisMonth: Number(pool.newHoursAddedThisMonth),
+            hoursWorkedThisMonth: Number(pool.hoursWorkedThisMonth),
+          }
+        : null,
+    };
+  });
+  const rateRowsProp: RateRow[] = rows.map((r) => ({
+    jobId: r.jobId,
+    jobIdLabel: r.jobIdLabel,
+    jobName: r.jobName,
+    status: r.status,
+    etcEngineering: r.etcEngineering,
+    etcShop: r.etcShop,
+    etcParts: r.etcParts,
+    engrRate: Number(r.engrRate),
+    shopRate: Number(r.shopRate),
+    partsMarkup: Number(r.partsMarkup),
+    contingencyAmount: r.contingencyAmount,
+    notes: r.notes,
+  }));
 
   return (
-    <div>
-      <div className="mb-6 flex flex-wrap items-center gap-3">
-        <form className="flex w-full max-w-md gap-2">
-          <input type="hidden" name="month" value={month} />
-          <input
-            type="text"
-            name="q"
-            defaultValue={q}
-            placeholder="Search by Job Id or name…"
-            className="w-full rounded-md border border-sdc-border px-3 py-2 text-sm focus:border-sdc-blue focus:outline-none"
-          />
-          <button type="submit" className="rounded-md bg-sdc-navy px-4 py-2 text-sm font-medium whitespace-nowrap text-white">
-            Search
-          </button>
-        </form>
-
-        <span className="text-xs font-medium text-sdc-gray-500">Month:</span>
-        <MonthSelect
-          months={allMonths}
-          current={month}
-          basePath="/standard-sheet"
-          lockedMonths={[...submittedMonths]}
-          inProgressSuffix=""
-        />
-
-        <StatusBadge variant={isSubmitted ? "locked" : "needsReview"}>
-          {isSubmitted ? "Submitted (frozen)" : "Live — not submitted"}
-        </StatusBadge>
-        {isSubmitted && latestSnapshotMeta && (
-          <span className="text-xs text-sdc-gray-400">
-            Submitted by {latestSnapshotMeta.submittedBy?.name ?? "—"} on{" "}
-            {latestSnapshotMeta.submittedAt.toISOString().slice(0, 16).replace("T", " ")}
-          </span>
-        )}
-        {!isSubmitted && rows.length > 0 && (
-          <form action={submitStandardSheetMonth.bind(null, month)}>
-            <button type="submit" className={BUTTON_PRIMARY}>
-              Submit {month}
-            </button>
-          </form>
-        )}
-        {isSubmitted && role === "ADMIN" && (
-          <form action={reopenStandardSheetMonth.bind(null, month)}>
-            <button type="submit" className={BUTTON_SECONDARY}>
-              Reopen for editing
-            </button>
-          </form>
-        )}
-
-        {editable && (
-          <form action={refreshPools.bind(null, month)}>
-            <button type="submit" className={BUTTON_SECONDARY}>
-              Refresh Pools (Power BI)
-            </button>
-          </form>
-        )}
-
-        {editable && (
-          <form action={saveContingencyRate} className="flex items-center gap-2">
-            <label className="text-xs font-medium text-sdc-gray-500">Global Contingency Rate</label>
-            <SelectOnFocusInput
-              type="number"
-              step="0.01"
-              name="contingencyRate"
-              defaultValue={contingencyRate.toString()}
-              className="w-16 rounded-md border border-sdc-border px-1.5 py-2 text-right text-sm outline-none focus:border-sdc-blue"
-            />
-            <button type="submit" className={BUTTON_SECONDARY}>
-              Save
-            </button>
-          </form>
-        )}
-      </div>
-
-      <div className="flex flex-col items-start gap-6 xl:flex-row">
-      <form action={saveRates.bind(null, month)} className="min-w-0 flex-1">
-        <h2 className="mb-2 font-heading text-base font-semibold tracking-tight text-sdc-navy">
-          Execution Rates &amp; Standard Fees — {month}
-        </h2>
-        <div className="max-h-[calc(100vh-260px)] min-w-[480px] overflow-auto border border-sdc-border bg-white shadow-sm select-none styled-scrollbar">
-          <table className={`w-full text-sm ${TABLE_GRID}`}>
-            <thead className="sticky top-0 z-20 bg-white">
-              <tr className={TABLE_HEADER_ROW}>
-                <th rowSpan={3} className="sticky left-0 z-10 w-10 min-w-10 bg-white px-2 py-3 text-center align-bottom">#</th>
-                <th rowSpan={3} className="sticky left-10 z-10 w-20 min-w-20 bg-white px-3 py-3 align-bottom">Job Id</th>
-                <th rowSpan={3} className="sticky left-[120px] z-10 bg-white px-3 py-3 align-bottom">Job Name</th>
-                <th rowSpan={3} className="border-l border-sdc-border px-3 py-3 align-bottom">Job Status</th>
-                <th colSpan={3} className={`${BLOCK_EDGE} px-3 py-2 text-center`}>
-                  Execution Rates <span className="text-sdc-blue" title="Editable column">✎</span>
-                </th>
-                <th colSpan={3} className={`${BLOCK_EDGE} bg-sdc-blue-light/40 px-3 py-2 text-center text-sdc-blue-dark`}>Execution ETC</th>
-                <th colSpan={2} className={`${BLOCK_EDGE} bg-sdc-gray-100 px-3 py-2 text-center text-sdc-gray-700`}>Total ETC</th>
-                <th colSpan={2} className={`${BLOCK_EDGE} bg-[#D6E4F0] px-3 py-2 text-center text-sdc-blue-dark`}>Standard Fees</th>
-                <th rowSpan={3} className={`${BLOCK_EDGE} bg-[#F8D7DA] px-3 py-2 text-center text-red-800`}>
-                  Contingency <span title="Editable column">✎</span>
-                </th>
-                <th rowSpan={3} className={`${BLOCK_EDGE} bg-sdc-yellow-bg px-3 py-3 text-center align-bottom`}>Total Standard Fees</th>
-                <th rowSpan={3} className={`${BLOCK_EDGE} px-3 py-3 align-bottom`}>
-                  Notes <span className="text-sdc-blue" title="Editable column">✎</span>
-                </th>
-              </tr>
-              <tr className={TABLE_HEADER_ROW}>
-                <th className={`${BLOCK_EDGE} px-2 py-2 text-center`}>ENGR</th>
-                <th className="px-2 py-2 text-center">Shop</th>
-                <th className="px-2 py-2 text-center">Parts</th>
-                <th className={`${BLOCK_EDGE} bg-sdc-blue-light/40 px-2 py-2 text-center text-sdc-blue-dark`}>Engineering</th>
-                <th className="bg-sdc-blue-light/40 px-2 py-2 text-center text-sdc-blue-dark">Shop</th>
-                <th className="bg-sdc-blue-light/40 px-2 py-2 text-center text-sdc-blue-dark">Parts</th>
-                <th className={`${BLOCK_EDGE} bg-sdc-gray-100 px-2 py-2 text-center text-sdc-gray-700`}>Total ETC</th>
-                <th className="bg-sdc-gray-100 px-2 py-2 text-center text-sdc-gray-700">% Total</th>
-                <th className={`${BLOCK_EDGE} bg-[#D6E4F0] px-2 py-2 text-center text-sdc-blue-dark`}>Engineering</th>
-                <th className="bg-[#D6E4F0] px-2 py-2 text-center text-sdc-blue-dark">Shop</th>
-              </tr>
-              <tr className={TABLE_HEADER_ROW}>
-                <th className={`${BLOCK_EDGE} px-2 py-1.5 text-center text-[10px]`}>All</th>
-                <th className="px-2 py-1.5 text-center text-[10px]">All</th>
-                <th className="px-2 py-1.5 text-center text-[10px]">All</th>
-                <th className={`${BLOCK_EDGE} bg-sdc-blue-light/40 px-2 py-1.5 text-center text-[10px] text-sdc-blue-dark`}>New ETC</th>
-                <th className="bg-sdc-blue-light/40 px-2 py-1.5 text-center text-[10px] text-sdc-blue-dark">New ETC</th>
-                <th className="bg-sdc-blue-light/40 px-2 py-1.5 text-center text-[10px] text-sdc-blue-dark">New ETC</th>
-                <th className={`${BLOCK_EDGE} bg-sdc-gray-100 px-2 py-1.5 text-[10px]`}></th>
-                <th className="bg-sdc-gray-100 px-2 py-1.5 text-[10px]"></th>
-                <th className={`${BLOCK_EDGE} bg-[#D6E4F0] px-2 py-1.5 text-center text-[10px] text-sdc-blue-dark`}>PM/Warranty</th>
-                <th className="bg-[#D6E4F0] px-2 py-1.5 text-center text-[10px] text-sdc-blue-dark">MFG/Warranty</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, i) => (
-                <tr key={r.jobId} className={`hover:bg-sdc-blue-light/40 ${i % 2 === 1 ? "bg-sdc-gray-50/60" : ""}`}>
-                  <td className={`sticky left-0 z-10 w-10 min-w-10 px-2 py-2 text-center text-sdc-gray-400 ${i % 2 === 1 ? "bg-sdc-gray-50" : "bg-white"}`}>
-                    {i + 1}
-                  </td>
-                  <td className={`sticky left-10 z-10 w-20 min-w-20 px-3 py-2 font-mono text-sdc-gray-400 ${i % 2 === 1 ? "bg-sdc-gray-50" : "bg-white"}`}>
-                    {r.jobIdLabel}
-                  </td>
-                  <td
-                    className={`sticky left-[120px] z-10 min-w-[240px] whitespace-nowrap px-3 py-2 font-medium text-sdc-navy ${i % 2 === 1 ? "bg-sdc-gray-50" : "bg-white"}`}
-                    title={r.jobName}
-                  >
-                    {r.jobName}
-                  </td>
-                  <td className="border-l border-sdc-border px-3 py-2 text-sdc-gray-400">{r.status}</td>
-                  <td className={`${BLOCK_EDGE} px-2 py-2`}>
-                    {editable && <input type="hidden" name="jobId" value={r.jobId} />}
-                    <SelectOnFocusInput
-                      type="number"
-                      step="0.01"
-                      name={`engrRate__${r.jobId}`}
-                      defaultValue={r.engrRate}
-                      disabled={!editable}
-                      aria-label={`ENGR rate, ${r.jobName}`}
-                      className={RATE_INPUT_CLASS}
-                    />
-                  </td>
-                  <td className="px-2 py-2">
-                    <SelectOnFocusInput
-                      type="number"
-                      step="0.01"
-                      name={`shopRate__${r.jobId}`}
-                      defaultValue={r.shopRate}
-                      disabled={!editable}
-                      aria-label={`Shop rate, ${r.jobName}`}
-                      className={RATE_INPUT_CLASS}
-                    />
-                  </td>
-                  <td className="px-2 py-2">
-                    <SelectOnFocusInput
-                      type="number"
-                      step="0.01"
-                      name={`partsMarkup__${r.jobId}`}
-                      defaultValue={r.partsMarkup}
-                      disabled={!editable}
-                      aria-label={`Parts markup, ${r.jobName}`}
-                      className={RATE_INPUT_CLASS}
-                    />
-                  </td>
-                  <td className={`${BLOCK_EDGE} bg-sdc-blue-light/10 px-1 py-2 text-right text-xs text-sdc-navy`}>{wholeHours(r.etcEngineering)}</td>
-                  <td className="bg-sdc-blue-light/10 px-1 py-2 text-right text-xs text-sdc-navy">{wholeHours(r.etcShop)}</td>
-                  <td className="bg-sdc-blue-light/10 px-1 py-2 text-right text-xs text-sdc-navy">{currency(r.etcParts)}</td>
-                  <td className={`${BLOCK_EDGE} bg-sdc-gray-50 px-1 py-2 text-right text-xs text-sdc-navy`}>{currency(r.totalEtcDollars)}</td>
-                  <td className="bg-sdc-gray-50 px-1 py-2 text-right text-xs text-sdc-navy">{percent(r.percentOfTotal)}</td>
-                  <td className={`${BLOCK_EDGE} bg-[#D6E4F0]/40 px-1 py-2 text-right text-xs text-sdc-navy`}>{currency(r.standardFeeEngineering)}</td>
-                  <td className="bg-[#D6E4F0]/40 px-1 py-2 text-right text-xs text-sdc-navy">{currency(r.standardFeeShop)}</td>
-                  <td className={`${BLOCK_EDGE} bg-[#F8D7DA]/40 px-2 py-2`}>
-                    {editable ? (
-                      <SelectOnFocusInput
-                        type="number"
-                        step="0.01"
-                        name={`contingencyAmount__${r.jobId}`}
-                        defaultValue={r.contingencyAmount ? r.contingencyAmount.toString() : ""}
-                        placeholder="—"
-                        aria-label={`Contingency amount, ${r.jobName}`}
-                        className="w-20 [appearance:textfield] border-none bg-transparent px-1.5 py-1 text-right text-xs outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                      />
-                    ) : (
-                      <span className="block px-1.5 py-1 text-right text-xs text-sdc-gray-500">
-                        {r.contingencyAmount ? currency(r.contingencyAmount) : "—"}
-                      </span>
-                    )}
-                  </td>
-                  <td className={`${BLOCK_EDGE} bg-sdc-yellow-bg/60 px-1 py-2 text-right text-xs font-medium text-sdc-navy`}>
-                    {currency(r.totalStandardFees)}
-                  </td>
-                  <td className={`${BLOCK_EDGE} px-2 py-2`}>
-                    {editable ? (
-                      <SelectOnFocusInput
-                        type="text"
-                        name={`notes__${r.jobId}`}
-                        defaultValue={r.notes}
-                        aria-label={`Notes, ${r.jobName}`}
-                        className="w-48 border-none bg-transparent px-1.5 py-1 text-xs outline-none"
-                      />
-                    ) : (
-                      <span className="block min-w-48 whitespace-nowrap px-1.5 py-1 text-xs text-sdc-gray-500" title={r.notes}>
-                        {r.notes || "—"}
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {rows.length === 0 && (
-                <tr>
-                  <td colSpan={17} className="px-4 py-5 text-sdc-gray-400">
-                    No jobs found for {month}.
-                  </td>
-                </tr>
-              )}
-              {rows.length > 0 && (
-                <tr className="border-t-2 border-sdc-navy bg-sdc-gray-100 font-medium">
-                  <td className="sticky left-0 z-10 bg-sdc-gray-100 px-3 py-2" colSpan={4}>
-                    Total
-                  </td>
-                  <td className={`${BLOCK_EDGE} px-2 py-2`} colSpan={3}></td>
-                  <td className={`${BLOCK_EDGE} px-2 py-2`} colSpan={3}></td>
-                  <td className={`${BLOCK_EDGE} px-1 py-2 text-right text-xs text-sdc-navy`}>{currency(grand.totalEtcDollars)}</td>
-                  <td className="px-1 py-2 text-right text-xs text-sdc-navy">{percent(grand.percentOfTotal)}</td>
-                  <td className={`${BLOCK_EDGE} px-1 py-2 text-right text-xs text-sdc-navy`}>{currency(grand.standardFeeEngineering)}</td>
-                  <td className="px-1 py-2 text-right text-xs text-sdc-navy">{currency(grand.standardFeeShop)}</td>
-                  <td className={`${BLOCK_EDGE} px-1 py-2 text-right text-xs text-sdc-navy`}>
-                    {grand.contingencyAmount ? currency(grand.contingencyAmount) : "—"}
-                  </td>
-                  <td className={`${BLOCK_EDGE} px-1 py-2 text-right text-xs font-semibold text-sdc-navy`}>{currency(grand.totalStandardFees)}</td>
-                  <td className={`${BLOCK_EDGE} px-2 py-2`}></td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {editable && rows.length > 0 && (
-          <div className="mt-4">
-            <button type="submit" className={`${BUTTON_PRIMARY} px-5 py-2.5`}>
-              Save Rates
-            </button>
-          </div>
-        )}
-      </form>
-
-      {/* "Standard Fees By Department" — sheet rows 71-108. Prev Pulled / New Added /
-          Hours Worked come from Power BI (Refresh Pools); Pulled and Rate are the
-          sheet's manual yellow cells; the rest are derived exactly like the sheet. */}
-      <div className="w-fit max-w-full shrink-0">
-        <h2 className="mb-2 font-heading text-base font-semibold tracking-tight text-sdc-navy">
-          Standard Fees By Department — {month}
-        </h2>
-        {poolsCarriedFrom && (
-          <p className="mb-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-            No pool data has been pulled for {month} yet — showing {poolsCarriedFrom}&apos;s figures as an estimate (Standard
-            Fees above are allocated from these). Click &quot;Refresh Pools (Power BI)&quot; above to pull {month}&apos;s exact numbers.
-          </p>
-        )}
-        <form action={savePools.bind(null, month)}>
-          <div className="max-h-[calc(100vh-260px)] w-fit max-w-full overflow-auto border border-sdc-border bg-white shadow-sm select-none styled-scrollbar">
-            <table className={`text-sm ${TABLE_GRID}`}>
-              <colgroup>
-                <col className="w-32" />
-                <col className="w-28" />
-                <col className="w-56" />
-                <col className="w-28" />
-              </colgroup>
-              <thead className="sticky top-0 z-20 bg-white">
-                <tr className={TABLE_HEADER_ROW}>
-                  <th className="px-3 py-2">Billing Group</th>
-                  <th className="px-3 py-2">Department</th>
-                  <th className="px-3 py-2">Attribute</th>
-                  <th className="px-3 py-2 text-right">Value</th>
-                </tr>
-              </thead>
-              <tbody>
-                {/* Transposed to match the workbook's "Standard Fees By Department"
-                    block: one attribute per row, grouped under Billing Group /
-                    Department cells that span their attribute rows. Yellow rows
-                    (Hours being pulled / Rate) are the manual editable cells. */}
-                {(["Engineering", "Shop"] as const).flatMap((group) => {
-                  const band = group === "Engineering" ? "bg-[#D9E7F5]" : "bg-[#FBE2D5]";
-                  const depts = POOL_ROWS.filter((r) => r.group === group);
-                  const groupSpan = depts.reduce((n, d) => n + (poolByCategory.get(d.category) ? 7 : 1), 0);
-                  let firstOfGroup = true;
-
-                  return depts.flatMap(({ category, dept, hint }) => {
-                    const pool = poolByCategory.get(category);
-                    const groupCell = (rowSpan: number) => (
-                      <td rowSpan={rowSpan} className={`px-3 py-2 text-center font-medium text-sdc-navy ${band}`}>
-                        {group}
-                      </td>
-                    );
-
-                    if (!pool) {
-                      const row = (
-                        <tr key={category} className="hover:bg-sdc-blue-light/40">
-                          {firstOfGroup && groupCell(groupSpan)}
-                          <td className="px-3 py-2 text-center text-sdc-gray-700">{dept}</td>
-                          <td colSpan={2} className="px-3 py-2 text-sdc-gray-400">
-                            No pool data for {month} — use &quot;Refresh Pools (Power BI)&quot;.
-                          </td>
-                        </tr>
-                      );
-                      firstOfGroup = false;
-                      return [row];
-                    }
-
-                    const available = Number(pool.hoursAvailable);
-                    const pulled = Number(pool.hoursPulledThisMonth);
-                    const newEtc = available - pulled;
-                    const hours = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 0 });
-
-                    const attrs: { label: string; node: React.ReactNode; yellow?: boolean; bold?: boolean }[] = [
-                      { label: "Previous Month Pulled Hours", node: hours(Number(pool.previousMonthPulledHours)) },
-                      { label: "New Hours Added this Month", node: hours(Number(pool.newHoursAddedThisMonth)) },
-                      { label: "Hours Available", node: hours(available), bold: true },
-                      { label: "Hours Worked this Month", node: hours(Number(pool.hoursWorkedThisMonth)) },
-                      {
-                        label: "Hours being pulled this month",
-                        yellow: true,
-                        node: poolsEditable ? (
-                          <SelectOnFocusInput
-                            type="number"
-                            step="0.01"
-                            name={`pulled__${category}`}
-                            defaultValue={pulled.toString()}
-                            title={hint}
-                            aria-label={`Hours being pulled this month, ${group} ${dept}`}
-                            className="w-24 [appearance:textfield] border-none bg-transparent px-1.5 py-1 text-right text-xs outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                          />
-                        ) : (
-                          <span className="text-xs text-sdc-gray-500">{hours(pulled)}</span>
-                        ),
-                      },
-                      { label: "New ETC Hours", node: hours(newEtc), bold: true },
-                      { label: "Standard Fee", node: currency(Number(pool.standardFee)), bold: true },
-                    ];
-
-                    const rows = attrs.map((a, ai) => (
-                      <tr key={`${category}-${a.label}`} className="hover:bg-sdc-blue-light/40">
-                        {firstOfGroup && ai === 0 && groupCell(groupSpan)}
-                        {ai === 0 && (
-                          <td rowSpan={attrs.length} className="px-3 py-2 text-center text-sdc-gray-700">
-                            {dept}
-                          </td>
-                        )}
-                        <td className="px-3 py-1.5 text-sdc-gray-700">{a.label}</td>
-                        <td className={`px-3 py-1.5 text-right text-xs text-sdc-navy ${a.yellow ? "bg-sdc-yellow-bg/60" : ""} ${a.bold ? "font-semibold" : ""}`}>
-                          {a.node}
-                        </td>
-                      </tr>
-                    ));
-                    firstOfGroup = false;
-                    return rows;
-                  });
-                })}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 border-sdc-navy bg-sdc-gray-100 text-xs font-medium">
-                  <td colSpan={3} className="px-3 py-2 text-right">
-                    <span className="mr-6 rounded bg-[#D9E7F5] px-2 py-0.5 text-sdc-navy">
-                      Engineering Total: {currency(engineeringTotal)}
-                    </span>
-                    <span className="rounded bg-[#FBE2D5] px-2 py-0.5 text-sdc-navy">
-                      Shop Total: {currency(shopTotal)}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 text-right font-semibold text-sdc-navy">
-                    {currency(engineeringTotal + shopTotal)}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-          {poolsEditable && effectivePools.length > 0 && (
-            <div className="mt-2">
-              <button type="submit" className={BUTTON_SECONDARY}>
-                Save Pools
-              </button>
-            </div>
-          )}
-        </form>
-      </div>
-      </div>
-    </div>
+    /* key={month}: month switches soft-navigate, reconciling this client
+       component in place — its rates/pulled state would otherwise survive
+       the switch and mix one month's edits into another's view (this is the
+       navigation-level cause of the 2026-07-14 engrRate crash; the in-
+       component fallbacks remain as a second line of defense). */
+    <StandardSheetLive
+      key={month}
+      month={month}
+      q={q}
+      allMonths={allMonths}
+      submittedMonths={[...submittedMonths]}
+      isSubmitted={isSubmitted}
+      roleIsAdmin={role === "ADMIN"}
+      submittedByName={latestSnapshotMeta?.submittedBy?.name ?? null}
+      submittedAtLabel={latestSnapshotMeta ? latestSnapshotMeta.submittedAt.toISOString().slice(0, 16).replace("T", " ") : null}
+      editable={editable}
+      poolsEditable={poolsEditable}
+      poolsCarriedFrom={poolsCarriedFrom}
+      initialContingencyRate={contingencyRate}
+      rows={rateRowsProp}
+      poolRows={poolRowsProp}
+      saveRatesAction={saveRates.bind(null, month)}
+      saveContingencyRateAction={saveContingencyRate}
+      savePoolsAction={savePools.bind(null, month)}
+      submitMonthAction={submitStandardSheetMonth.bind(null, month)}
+      reopenMonthAction={reopenStandardSheetMonth.bind(null, month)}
+      refreshPoolsAction={refreshPools.bind(null, month)}
+    />
   );
 }
+

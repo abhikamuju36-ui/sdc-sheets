@@ -436,9 +436,18 @@ export async function syncQuotedFromPowerBi(): Promise<{
 
   const validJobs = await prisma.job.findMany({
     where: { type: { in: [...VALID_JOB_TYPES] } },
-    select: { id: true, jobId: true },
+    select: { id: true, jobId: true, costQuotedManuallyEdited: true },
   });
   const jobByJobId = new Map(validJobs.map((j) => [j.jobId, j]));
+
+  // Rows a manager has hand-edited on the Projects tab must not have that
+  // edit silently overwritten by this sync — quotedHours is skipped for
+  // those; estimateToCompleteHours still refreshes either way.
+  const manuallyEditedKeys = new Set(
+    (await prisma.estimatedHours.findMany({ where: { quotedHoursManuallyEdited: true }, select: { jobId: true, section: true } })).map(
+      (e) => `${e.jobId}::${e.section}`
+    )
+  );
 
   let sectionsUpdated = 0;
   let jobsNotFoundCount = 0;
@@ -459,10 +468,11 @@ export async function syncQuotedFromPowerBi(): Promise<{
     }
     if ((quotedHours ?? 0) === 0 && (estimateToCompleteHours ?? 0) === 0) continue;
 
+    const isManuallyEdited = manuallyEditedKeys.has(`${job.id}::${section}`);
     await prisma.estimatedHours.upsert({
       where: { jobId_section: { jobId: job.id, section } },
       update: {
-        quotedHours: quotedHours ?? 0,
+        ...(isManuallyEdited ? {} : { quotedHours: quotedHours ?? 0 }),
         estimateToCompleteHours: estimateToCompleteHours ?? 0,
       },
       create: {
@@ -489,6 +499,7 @@ export async function syncQuotedFromPowerBi(): Promise<{
       continue;
     }
 
+    if (job.costQuotedManuallyEdited) continue;
     await prisma.job.update({ where: { id: job.id }, data: { costQuoted } });
     jobsUpdated++;
   }

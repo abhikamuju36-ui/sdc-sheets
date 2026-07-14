@@ -253,7 +253,7 @@ export default function Sidebar({
   return (
     <aside
       style={{ width: collapsed ? undefined : width }}
-      className={`relative flex shrink-0 flex-col border-r border-sdc-border bg-white ${
+      className={`relative flex shrink-0 flex-col bg-sdc-navy text-white ${
         dragWidth === null ? "transition-[width] duration-150" : ""
       } ${collapsed ? "w-16" : ""}`}
     >
@@ -261,17 +261,19 @@ export default function Sidebar({
         <div
           onMouseDown={startResize}
           title="Drag to resize"
-          className="absolute top-0 right-0 z-10 h-full w-1.5 -mr-0.5 cursor-col-resize hover:bg-sdc-blue-light active:bg-sdc-blue-light"
+          className="absolute top-0 right-0 z-10 h-full w-1.5 -mr-0.5 cursor-col-resize hover:bg-white/10 active:bg-white/10"
         />
       )}
-      <div className={`flex items-center gap-2.5 border-b border-sdc-border-soft ${collapsed ? "justify-center px-0 py-4" : "px-5 py-4"}`}>
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sdc-navy">
+      <div
+        className={`flex items-center gap-2.5 border-b border-white/10 ${collapsed ? "justify-center px-0 py-4" : "px-4 py-4"}`}
+      >
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[9px] bg-sdc-blue">
           <Image src="/brand/sdc-logo-white.png" alt="SDC" width={20} height={11} unoptimized />
         </div>
         {!collapsed && (
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold leading-tight text-sdc-navy">ETC Planner</p>
-            <p className="truncate text-[11px] text-sdc-gray-400">Steven Douglas Corp.</p>
+            <p className="truncate text-sm font-semibold leading-tight text-white">ETC Planner</p>
+            <p className="truncate text-[11px] text-sdc-blue-100/80">Steven Douglas Corp.</p>
           </div>
         )}
       </div>
@@ -280,7 +282,7 @@ export default function Sidebar({
         {groups.map((group) => (
           <div key={group.label}>
             {!collapsed && (
-              <p className="mb-1.5 px-2 text-[10.5px] font-semibold uppercase tracking-wide text-sdc-gray-400">
+              <p className="mb-1.5 px-2 text-[10.5px] font-semibold tracking-wider text-sdc-blue-100/50 uppercase">
                 {group.label}
               </p>
             )}
@@ -292,11 +294,15 @@ export default function Sidebar({
                     key={item.href}
                     href={item.href}
                     title={collapsed ? item.label : undefined}
-                    className={`flex items-center gap-2.5 rounded-md px-2 py-2 text-sm font-medium transition-colors ${
+                    className={`flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium transition-colors ${
                       collapsed ? "justify-center" : ""
-                    } ${active ? "bg-sdc-navy text-white shadow-sm" : "text-sdc-gray-700 hover:bg-sdc-gray-100"}`}
+                    } ${
+                      active
+                        ? "border-l-2 border-sdc-blue bg-sdc-blue/20 text-white"
+                        : "text-sdc-blue-100/70 hover:bg-white/5 hover:text-white"
+                    }`}
                   >
-                    <span className={`flex h-5 w-5 shrink-0 items-center justify-center ${active ? "text-sdc-blue-100" : "text-sdc-gray-400"}`}>
+                    <span className={`flex h-5 w-5 shrink-0 items-center justify-center ${active ? "text-white" : "text-sdc-blue-100/60"}`}>
                       {item.icon}
                     </span>
                     {!collapsed && <span className="truncate">{item.label}</span>}
@@ -310,7 +316,7 @@ export default function Sidebar({
 
       <button
         onClick={toggleCollapsed}
-        className="flex items-center gap-2.5 border-t border-sdc-border-soft px-4 py-3 text-xs font-medium text-sdc-gray-600 hover:bg-sdc-gray-100"
+        className="flex items-center gap-2.5 border-t border-white/10 px-4 py-3 text-xs font-medium text-sdc-blue-100/70 hover:bg-white/5 hover:text-white"
       >
         <Icon>
           {collapsed ? (
@@ -322,15 +328,15 @@ export default function Sidebar({
         {!collapsed && <span>Collapse</span>}
       </button>
 
-      <div className={`flex items-center gap-2 border-t border-sdc-border-soft px-4 py-3 ${collapsed ? "justify-center px-0" : ""}`}>
-        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sdc-blue-light text-[11px] font-semibold text-sdc-blue-dark">
+      <div className={`flex items-center gap-2 border-t border-white/10 px-4 py-3 ${collapsed ? "justify-center px-0" : ""}`}>
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sdc-blue text-[11px] font-semibold text-white">
           {userEmail?.[0]?.toUpperCase() ?? "?"}
         </div>
         {!collapsed && (
           <div className="min-w-0 flex-1">
-            <p className="truncate text-xs text-sdc-gray-700">{userEmail}</p>
+            <p className="truncate text-xs text-sdc-blue-100/90">{userEmail}</p>
             <form action={signOutAction}>
-              <button className="text-[11px] text-sdc-gray-400 underline hover:text-sdc-navy">Sign out</button>
+              <button className="text-[11px] text-sdc-blue-100/60 underline hover:text-white">Sign out</button>
             </form>
           </div>
         )}

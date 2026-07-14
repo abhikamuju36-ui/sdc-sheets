@@ -2,7 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
-import { calcHoursLeft, suggestNewEtc, isMonthLocked, round2, prevMonth, nextMonth, isValidMonth } from "@/lib/etc";
+import { calcHoursLeft, suggestNewEtc, isMonthLocked, round2, prevMonth, nextMonth, isValidMonth, isSafeForLiveEtcSync } from "@/lib/etc";
 import { etcActiveJobFilter } from "@/lib/job-filters";
 import { syncActualHoursFromPowerBi, syncHoursWorkedFromPowerBi, syncPartsCostFromPowerBi } from "@/lib/sync-powerbi";
 import { syncEtcHistoryFromPowerBi } from "@/lib/sync-etc-history";
@@ -144,12 +144,6 @@ export async function submitMonth(month: string, formData: FormData) {
   const session = await auth();
   const userId = (session?.user as { id?: string } | undefined)?.id;
 
-  // Scope to the same job universe the grid renders — entries on jobs that
-  // stopped qualifying since the last Refresh have no form inputs and must be
-  // pruned (if unsubmitted) rather than fail validation. Confirmed entries on
-  // since-hidden jobs are history and are left untouched.
-  const qualifying = await prisma.job.findMany({ where: etcActiveJobFilter, select: { id: true } });
-  const qualifyingIds = new Set(qualifying.map((j) => j.id));
   const allEntries = await prisma.etcEntry.findMany({ where: { month } });
 
   // A locked month is frozen history — a stale tab re-POSTing this form (or a
@@ -158,11 +152,36 @@ export async function submitMonth(month: string, formData: FormData) {
   if (isMonthLocked(allEntries)) {
     throw new Error(`${month} is already submitted and locked — reopen it first if a correction is needed.`);
   }
+
+  // A reopened HISTORICAL month (a newer month exists) is a correction pass,
+  // not a live workflow: its job universe is its own entries, period. The
+  // current-month branch below prunes entries whose jobs dropped out of
+  // TODAY's etcActiveJobFilter — correct for the in-progress month (the grid
+  // renders that same filter, so pruned rows had no form inputs), but on a
+  // reopened historical month it silently deleted real history for jobs that
+  // completed since (proven live 2026-07-14: re-submitting a reopened April
+  // shrank it 366 → 323 rows / 43 → 36 jobs before the data was restored
+  // from the source workbook). getEtcMonthJobWhere applies the same
+  // historical rule to what the grid renders, so grid and submit agree.
+  const latest = await prisma.etcEntry.findFirst({ orderBy: { month: "desc" }, select: { month: true } });
+  const isHistorical = latest != null && month < latest.month;
+
   const renderable = (section: string) => section === PARTS_COST_SECTION || ETC_TRACKED_CODES.has(section);
-  const staleIds = allEntries
-    .filter((e) => e.needsReview && (!qualifyingIds.has(e.jobId) || !renderable(e.section)))
-    .map((e) => e.id);
-  const entries = allEntries.filter((e) => qualifyingIds.has(e.jobId) && renderable(e.section));
+  let staleIds: number[] = [];
+  let entries: typeof allEntries;
+  if (isHistorical) {
+    // Never delete anything from history; lock every entry the month has.
+    entries = allEntries.filter((e) => renderable(e.section));
+  } else {
+    // Scope to the same job universe the grid renders — entries on jobs that
+    // stopped qualifying since the last Refresh have no form inputs and must
+    // be pruned (if unsubmitted) rather than fail validation. Confirmed
+    // entries on since-hidden jobs are history and are left untouched.
+    const qualifying = await prisma.job.findMany({ where: etcActiveJobFilter, select: { id: true } });
+    const qualifyingIds = new Set(qualifying.map((j) => j.id));
+    staleIds = allEntries.filter((e) => e.needsReview && (!qualifyingIds.has(e.jobId) || !renderable(e.section))).map((e) => e.id);
+    entries = allEntries.filter((e) => qualifyingIds.has(e.jobId) && renderable(e.section));
+  }
 
   // Never let a submission reduce a month to nothing — an empty confirm with
   // stale deletions would erase the month instead of locking it.
@@ -175,6 +194,13 @@ export async function submitMonth(month: string, formData: FormData) {
   for (const entry of entries) {
     const rawHours = formData.get(`hoursWorked__${entry.id}`);
     if (rawHours === null || rawHours === "") {
+      // On a historical correction pass, an entry hidden from the grid (e.g.
+      // its job is type-gated out of rendering) simply keeps its stored Hours
+      // Worked AND its stored New ETC instead of failing the whole submission.
+      if (isHistorical) {
+        inputs.push({ id: entry.id, hoursWorked: Number(entry.hoursWorked), override: round2(Number(entry.newEtc)) });
+        continue;
+      }
       throw new Error(`Missing Hours Worked for entry ${entry.id} (section ${entry.section}).`);
     }
     const hoursWorked = Number(rawHours);
@@ -190,6 +216,13 @@ export async function submitMonth(month: string, formData: FormData) {
         throw new Error(`Invalid New ETC override "${rawOverride}" for entry ${entry.id} (section ${entry.section}).`);
       }
       override = round2(overrideVal);
+    } else if (isHistorical) {
+      // Historical correction pass: an untouched New ETC cell renders EMPTY
+      // (the original submit consumed its draft), so "no override" here means
+      // "keep the manager's confirmed value" — NOT "recompute the suggestion",
+      // which would silently erase every manager override in the month on a
+      // no-changes resubmit. To change a historical cell, type the new value.
+      override = round2(Number(entry.newEtc));
     }
 
     inputs.push({ id: entry.id, hoursWorked, override });
@@ -307,6 +340,30 @@ export async function reopenMonth(month: string, _formData: FormData) {
 // always reflect Power BI, not be independently typed in. Recomputes Hours
 // Left / suggested New ETC from the fresh value, but leaves needsReview
 // untouched so a manager still confirms before it counts as submitted.
+//
+// Found 2026-07-14 (see the June data-correction incident): reopening an
+// already-closed month and running this seeds/re-syncs it against TODAY's
+// etcActiveJobFilter and TODAY's raw Power BI actuals — wrong on both counts
+// for a month that's already closed. seedMonth's prune step deletes entries
+// for jobs that have since completed (real history, gone), its re-seed step
+// adds entries for jobs that only became active after that month closed (never
+// really part of it), and the "actual hours" sync overwrites Hours Worked with
+// today's raw system totals instead of whatever was reconciled/manager-signed
+// for that month — proven by directly reopening a corrected historical month
+// and running this: 42 real entries were deleted, 62 wrong ones were added,
+// twice (once each on the April and June corrections; the live measure
+// happily returns real-looking data for a past month, it's just the wrong
+// data for it). This only ever belongs on the single currently-open month —
+// historical corrections belong in "Sync History" or manual entry instead.
+async function assertCurrentEtcMonth(month: string): Promise<void> {
+  const latest = await prisma.etcEntry.findFirst({ orderBy: { month: "desc" }, select: { month: true } });
+  if (!isSafeForLiveEtcSync(month, latest?.month ?? null)) {
+    throw new Error(
+      `${month} is not the current ETC month (${latest!.month} is) — Run Report and Clear ETC only belong on the single currently-open month and would corrupt this one. Reopen ${month} and correct entries by hand, or use "Sync History" to refresh it from Power BI's historical archive instead.`
+    );
+  }
+}
+
 export async function syncPowerBiForEtc(month: string, _formData: FormData) {
   // A submitted month is a frozen snapshot — refresh must never rewrite its
   // Hours Worked/Parts Cost. Reopen it first if a genuine correction is needed.
@@ -314,6 +371,7 @@ export async function syncPowerBiForEtc(month: string, _formData: FormData) {
   if (isMonthLocked(entries)) {
     throw new Error(`${month} is already submitted and locked — its numbers are frozen. Reopen it first if a correction is needed.`);
   }
+  await assertCurrentEtcMonth(month);
 
   await seedMonth(month);
   await syncActualHoursFromPowerBi();
@@ -330,10 +388,12 @@ export async function syncPowerBiForEtc(month: string, _formData: FormData) {
 // app is the source of truth for those. Safe to run any time.
 export async function syncEtcHistory(_formData: FormData) {
   const result = await syncEtcHistoryFromPowerBi();
+  const staleMonths = [...new Set([...result.monthsOwnedWithPbiHistoryNow, ...result.poolMonthsOwnedWithPbiHistoryNow])];
+  const staleWarning = staleMonths.length > 0 ? ` — WARNING: possibly stale: ${staleMonths.join(", ")}` : "";
   await logAudit({
     action: "etc.syncEtcHistory",
     entityType: "EtcMonth",
-    summary: `Refreshed ${result.monthsRefreshed.length} historical ETC months from Power BI (${result.entriesWritten} rows)`,
+    summary: `Refreshed ${result.monthsRefreshed.length} historical ETC months from Power BI (${result.entriesWritten} rows)${staleWarning}`,
     metadata: result,
   });
   revalidatePath("/etc");
@@ -351,6 +411,10 @@ export async function clearMonth(month: string, _formData: FormData) {
   if (isMonthLocked(entries)) {
     throw new Error(`${month} is already submitted — reopen it before clearing.`);
   }
+  // Clearing a reopened HISTORICAL month would overwrite every manager-
+  // confirmed New ETC with the recomputed suggestion — erasing exactly the
+  // overrides that made it history. Clear belongs to the live workflow only.
+  await assertCurrentEtcMonth(month);
 
   await prisma.$transaction(
     async (tx) => {

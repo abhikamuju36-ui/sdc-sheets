@@ -4,20 +4,15 @@ import { auth } from "@/lib/auth";
 import { compareJobIds } from "@/lib/job-filters";
 import { getEtcMonthJobWhere } from "@/lib/etc-month-jobs";
 import { EtcDraftInput } from "@/components/EtcDraftInput";
-import { ExecutionRateInput } from "@/components/ExecutionRateInput";
+import { EtcSectionCells } from "@/components/EtcSectionCells";
+import { StandardRatesProvider, EtcStandardCells, StandardGrandCells } from "@/components/EtcStandardColumns";
+import type { StandardJobBase, PoolTotals } from "@/components/EtcStandardColumns";
 import { ETC_SECTIONS, PARTS_COST_SECTION } from "@/lib/sections";
-import { calcHoursLeft, suggestNewEtc, isMonthLocked, nextMonth, round2 } from "@/lib/etc";
+import { calcHoursLeft, suggestNewEtc, isMonthLocked, isValidMonth, nextMonth, round2 } from "@/lib/etc";
 import { submitMonth, reopenMonth, syncPowerBiForEtc, syncEtcHistory } from "@/lib/etc-actions";
 import { RunReportButton } from "@/components/RunReportButton";
 import { isStandardSheetUnlocked, hadWrongPassword, unlockStandardSheet, lockStandardSheet } from "@/lib/standard-sheet-gate";
 import { getExecutionEtcByJob } from "@/lib/execution-etc";
-import {
-  calcTotalEtcDollars,
-  calcPercentOfTotal,
-  calcStandardFeeEngineering,
-  calcStandardFeeShop,
-  calcTotalStandardFees,
-} from "@/lib/standard-fees";
 import { PageTitle } from "@/components/ui/Typography";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { MonthYearSelect } from "@/components/MonthYearSelect";
@@ -211,10 +206,6 @@ function currency(n: number) {
   return n.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 }
 
-function percent(n: number) {
-  return (n * 100).toLocaleString(undefined, { maximumFractionDigits: 2 }) + "%";
-}
-
 // The Standard Sheet columns appended to the grid once unlocked, in the order
 // they print on that page — Execution Rates, Execution ETC (New ETC), Total
 // ETC, the merged Standard Fees (Engineering + Shop as one), Contingency,
@@ -233,20 +224,20 @@ const STANDARD_LEAF_COLUMNS = [
 // blanket `[&_th]:border-l`/`[&_td]:border-l` rules, which — being a
 // class+element selector — otherwise out-specificity a plain utility class
 // and silently reset the border back to the grid's thin default. Matches
-// TABLE_GRID's own gridline color (#2b2b2b, a blackish charcoal) exactly —
-// same color on both the wide border-left and the thin border-bottom means
+// TABLE_GRID's own gridline color (#808080, a mid gray) exactly — same
+// color on both the wide border-left and the thin border-bottom means
 // their mitered corner is invisible, instead of the jagged two-tone seam a
 // mismatched divider color made.
-const STD_EDGE = "border-l-[33px]! border-l-[#2b2b2b]!";
+const STD_EDGE = "border-l-[33px]! border-l-[#808080]!";
 // Same treatment for phase/Parts-Cost/Total block boundaries — a heavier
 // divider than the grid's normal thin gridline, matching the sheet's solid
 // rules between major column blocks.
-const PHASE_EDGE = "border-l-[33px]! border-l-[#2b2b2b]!";
+const PHASE_EDGE = "border-l-[33px]! border-l-[#808080]!";
 // Same idea, scaled down for the levels nested inside a phase — billing
 // group (Engineering/Shop) gets a medium divider, sub-group (ME/CE/GE/dept)
 // a light one, both still heavier than the plain 1px gridline.
-const GROUP_EDGE = "border-l-[12px]! border-l-[#2b2b2b]!";
-const SUBGROUP_EDGE = "border-l-4! border-l-[#2b2b2b]!";
+const GROUP_EDGE = "border-l-[12px]! border-l-[#808080]!";
+const SUBGROUP_EDGE = "border-l-4! border-l-[#808080]!";
 
 function currentMonth() {
   const d = new Date();
@@ -326,7 +317,9 @@ export default async function MonthlyEtcPage({
     select: { month: true },
     orderBy: { month: "desc" },
   });
-  const month = monthParam || distinctMonths[0]?.month || currentMonth();
+  // A malformed ?month= (typo'd URL) must not flow into queries/date math —
+  // fall back to the default month instead of rendering a nonsense view.
+  const month = (monthParam && isValidMonth(monthParam) ? monthParam : undefined) || distinctMonths[0]?.month || currentMonth();
 
   // A month is locked when it has entries and none still need review — months
   // with any pending entry are "in progress"; the rest of the history is locked.
@@ -341,6 +334,13 @@ export default async function MonthlyEtcPage({
   // surface it in the picker so it can actually be started.
   const latestMonth = distinctMonths[0]?.month;
   const nextStartable = latestMonth && !inProgressSet.has(latestMonth) ? nextMonth(latestMonth) : undefined;
+
+  // A reopened HISTORICAL month is a correction pass: every stored newEtc is a
+  // previously-confirmed value the grid must seed its inputs from, so a
+  // no-changes resubmit is a true no-op. Detected by month position rather
+  // than per-entry submittedAt, because Excel restores and the Power BI
+  // history backfill both leave submittedAt null on confirmed history.
+  const isHistoricalMonth = latestMonth != null && month < latestMonth;
 
   // Which jobs the grid shows depends on whether the month is history:
   // - A locked month is a frozen snapshot — show exactly the jobs that have
@@ -383,28 +383,12 @@ export default async function MonthlyEtcPage({
     ? !!(await prisma.standardSheetSnapshot.findFirst({ where: { month }, select: { id: true } }))
     : false;
 
-  type StandardRow = {
-    engrRate: number;
-    shopRate: number;
-    partsMarkup: number;
-    etcEngineering: number;
-    etcShop: number;
-    etcParts: number;
-    totalEtcDollars: number;
-    percentOfTotal: number;
-    standardFees: number;
-    contingencyAmount: number;
-    totalStandardFees: number;
-    notes: string;
-  };
-  const standardByJob = new Map<number, StandardRow>();
-  const standardGrand = {
-    totalEtcDollars: 0,
-    percentOfTotal: 0,
-    standardFees: 0,
-    contingencyAmount: 0,
-    totalStandardFees: 0,
-  };
+  // Fixed inputs only — Total ETC $/% Total/Standard Fees/Total Standard
+  // Fees are all cross-linked (a rate edit shifts every job's % Total) and
+  // computed live client-side by StandardRatesProvider/EtcStandardCells.
+  const standardByJob = new Map<number, StandardJobBase>();
+  let poolTotals: PoolTotals = { engineeringPM: 0, engineeringWarranty: 0, shopManufacturing: 0, shopWarranty: 0 };
+  let contingencyRate = 1.2;
 
   if (showStandards) {
     const [execEtcByJob, pools, setting] = await Promise.all([
@@ -412,56 +396,28 @@ export default async function MonthlyEtcPage({
       prisma.categoryPool.findMany({ where: { month } }),
       prisma.standardSheetSetting.findUnique({ where: { id: 1 } }),
     ]);
-    const contingencyRate = setting ? Number(setting.contingencyRate) : 1.2;
-    const poolTotals = {
+    contingencyRate = setting ? Number(setting.contingencyRate) : 1.2;
+    poolTotals = {
       engineeringPM: Number(pools.find((p) => p.category === "ENGINEERING_PM")?.standardFee ?? 0),
       engineeringWarranty: Number(pools.find((p) => p.category === "ENGINEERING_WARRANTY")?.standardFee ?? 0),
       shopManufacturing: Number(pools.find((p) => p.category === "SHOP_MANUFACTURING")?.standardFee ?? 0),
       shopWarranty: Number(pools.find((p) => p.category === "SHOP_WARRANTY")?.standardFee ?? 0),
     };
 
-    const base = jobs.map((job) => {
+    for (const job of jobs) {
       const etc = execEtcByJob.get(job.id) ?? { engineering: 0, shop: 0, parts: 0 };
-      const rate = {
-        engrRate: job.executionRate ? Number(job.executionRate.engrRate) : 170,
-        shopRate: job.executionRate ? Number(job.executionRate.shopRate) : 140,
-        partsMarkup: job.executionRate ? Number(job.executionRate.partsMarkup) : 1.2,
-      };
-      return { job, etc, rate, totalEtcDollars: calcTotalEtcDollars(etc, rate) };
-    });
-    const grandTotal = base.reduce((sum, r) => sum + r.totalEtcDollars, 0);
-
-    for (const { job, etc, rate, totalEtcDollars } of base) {
-      const percentOfTotal = calcPercentOfTotal(totalEtcDollars, grandTotal);
-      const standardFees =
-        calcStandardFeeEngineering(percentOfTotal, poolTotals) + calcStandardFeeShop(percentOfTotal, poolTotals);
-      const contingencyAmount = job.executionRate ? Number(job.executionRate.contingencyAmount) : 0;
-      const totalStandardFees = calcTotalStandardFees(
-        totalEtcDollars,
-        calcStandardFeeEngineering(percentOfTotal, poolTotals),
-        calcStandardFeeShop(percentOfTotal, poolTotals),
-        contingencyAmount,
-        contingencyRate,
-      );
       standardByJob.set(job.id, {
-        engrRate: rate.engrRate,
-        shopRate: rate.shopRate,
-        partsMarkup: rate.partsMarkup,
+        jobId: job.id,
+        jobName: job.jobName,
         etcEngineering: etc.engineering,
         etcShop: etc.shop,
         etcParts: etc.parts,
-        totalEtcDollars,
-        percentOfTotal,
-        standardFees,
-        contingencyAmount,
-        totalStandardFees,
+        engrRate: job.executionRate ? Number(job.executionRate.engrRate) : 170,
+        shopRate: job.executionRate ? Number(job.executionRate.shopRate) : 140,
+        partsMarkup: job.executionRate ? Number(job.executionRate.partsMarkup) : 1.2,
+        contingencyAmount: job.executionRate ? Number(job.executionRate.contingencyAmount) : 0,
         notes: job.executionRate?.notes ?? "",
       });
-      standardGrand.totalEtcDollars += totalEtcDollars;
-      standardGrand.percentOfTotal += percentOfTotal;
-      standardGrand.standardFees += standardFees;
-      standardGrand.contingencyAmount += contingencyAmount;
-      standardGrand.totalStandardFees += totalStandardFees;
     }
   }
 
@@ -566,8 +522,20 @@ export default async function MonthlyEtcPage({
       </p>
 
       {started && (
-        <form id="etc-month-form" action={submitMonth.bind(null, month)}>
-          <div className="max-h-[calc(100vh-260px)] min-w-[480px] overflow-auto border border-sdc-border border-t-[#2b2b2b] bg-white shadow-sm select-none styled-scrollbar">
+        /* key={month}: the month picker soft-navigates (router.push), which
+           reconciles this subtree in place — rows are keyed by job/section, so
+           without a remount every client cell (EtcSectionCells, the Standard
+           rate inputs) keeps the PREVIOUS month's typed state and renders it
+           under the new month's numbers. Remounting per month guarantees each
+           month's grid seeds fresh from its own server data. */
+        <form key={month} id="etc-month-form" action={submitMonth.bind(null, month)}>
+          <div className="max-h-[calc(100vh-260px)] min-w-[480px] overflow-auto border border-sdc-border border-t-[#808080] bg-white shadow-sm select-none styled-scrollbar">
+            <StandardRatesProvider
+              jobs={[...standardByJob.values()]}
+              poolTotals={poolTotals}
+              contingencyRate={contingencyRate}
+              disabled={standardSheetSubmitted}
+            >
             <table className={`w-full text-sm ${TABLE_GRID}`}>
               <thead className="sticky top-0 z-20 bg-sdc-gray-100">
                 <tr className={TABLE_HEADER_ROW}>
@@ -775,13 +743,8 @@ export default async function MonthlyEtcPage({
                         }
                         const prior = Number(entry.priorEtc);
                         const worked = Number(entry.hoursWorked);
-                        const hoursLeft = calcHoursLeft(prior, worked);
-                        const suggested = suggestNewEtc(prior, worked);
                         const draft = entry.newEtcDraft != null ? Number(entry.newEtcDraft) : null;
                         const effective = effectiveNewEtc(entry);
-                        const diff = hoursLeft - effective;
-                        // Deterministic carry-forward or a saved draft both count as "decided".
-                        const decided = worked === 0 || draft != null;
 
                         const sectionTotal = sectionGrandTotals.get(s.code)!;
                         sectionTotal.prior += prior;
@@ -790,47 +753,17 @@ export default async function MonthlyEtcPage({
 
                         return (
                           <Fragment key={s.code}>
-                            <td className={`${edge} bg-[#5E91D3] px-1 py-1 text-right text-xs text-sdc-gray-700`}>
-                              {wholeNum(prior)}
-                            </td>
-                            <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1`}>
-                              {/* Raw (round2) defaultValue, NOT wholeNum — the input's value is
-                                  what submitMonth writes back, so a rounded default would
-                                  permanently degrade Power BI's decimal hours on every submit. */}
-                              <input
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                name={`hoursWorked__${entry.id}`}
-                                defaultValue={String(round2(worked))}
-                                disabled={locked}
-                                aria-label={`Hours worked, ${job.jobName}, ${s.name}`}
-                                className="w-12 rounded-md border border-transparent bg-transparent px-1.5 py-1 text-right text-xs outline-none focus:border-sdc-blue focus:bg-white focus:shadow-sm disabled:text-sdc-gray-400"
-                              />
-                            </td>
-                            <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-1 py-1 text-right text-xs text-sdc-gray-500`}>
-                              {wholeNum(hoursLeft)}
-                            </td>
-                            <td className={`border-l border-sdc-border ${newEtcBg(decided)} px-1 py-1`}>
-                              {/* No hours worked -> carry-forward is deterministic, safe to auto-fill.
-                                  Hours worked > 0 -> a manager's judgment call, not auto-filled;
-                                  flagged yellow so it's obviously not done yet. Typed values
-                                  autosave on blur so a Refresh can't wipe them. */}
-                              <EtcDraftInput
-                                entryId={entry.id}
-                                name={`newEtcOverride__${entry.id}`}
-                                defaultValue={draft != null ? String(draft) : worked === 0 ? String(round2(suggested)) : undefined}
-                                placeholder={worked === 0 || draft != null ? undefined : wholeNum(suggested)}
-                                disabled={locked}
-                                ariaLabel={`New ETC override, ${job.jobName}, ${s.name}`}
-                                className={`w-12 [appearance:textfield] rounded-md border-none bg-transparent px-1.5 py-1 text-right text-xs outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none focus:bg-white focus:shadow-sm ${
-                                  decided ? "text-sdc-gray-600" : "text-sdc-yellow-text placeholder:text-sdc-yellow-text/60"
-                                }`}
-                              />
-                            </td>
-                            <td className={`border-l border-sdc-border ${diffBg(diff)} px-1 py-1 text-right text-xs text-sdc-gray-700`}>
-                              {wholeNum(diff)}
-                            </td>
+                            <EtcSectionCells
+                              entryId={entry.id}
+                              edge={edge}
+                              jobName={job.jobName}
+                              sectionName={s.name}
+                              priorEtc={prior}
+                              initialWorked={round2(worked)}
+                              initialDraft={draft}
+                              initialConfirmed={isHistoricalMonth || entry.submittedAt != null ? round2(Number(entry.newEtc)) : null}
+                              locked={locked}
+                            />
                           </Fragment>
                         );
                       })}
@@ -881,7 +814,17 @@ export default async function MonthlyEtcPage({
                               <EtcDraftInput
                                 entryId={partsCostEntry.id}
                                 name={`newEtcOverride__${partsCostEntry.id}`}
-                                defaultValue={draftCost != null ? String(draftCost) : spent === 0 ? String(round2(suggestedCost)) : undefined}
+                                defaultValue={
+                                  draftCost != null
+                                    ? String(draftCost)
+                                    : // Reopened month: seed with the confirmed value so a
+                                      // no-changes resubmit can't replace it with the suggestion.
+                                      isHistoricalMonth || partsCostEntry.submittedAt != null
+                                      ? String(round2(Number(partsCostEntry.newEtc)))
+                                      : spent === 0
+                                        ? String(round2(suggestedCost))
+                                        : undefined
+                                }
                                 placeholder={spent === 0 || draftCost != null ? undefined : wholeNum(suggestedCost)}
                                 disabled={locked}
                                 ariaLabel={`New ETC cost override, ${job.jobName}, Parts Cost`}
@@ -926,51 +869,9 @@ export default async function MonthlyEtcPage({
                         (() => {
                           const std = standardByJob.get(job.id);
                           if (!std) return null;
-                          const cell = (edge: boolean) =>
-                            `${edge ? STD_EDGE : "border-l border-sdc-border"} px-2 py-1 text-right text-xs text-sdc-navy`;
                           return (
                             <Fragment key="standards">
-                              <td className={cell(true)}>
-                                <ExecutionRateInput
-                                  jobId={job.id}
-                                  field="engrRate"
-                                  defaultValue={wholeNum(std.engrRate)}
-                                  disabled={standardSheetSubmitted}
-                                  ariaLabel={`ENGR rate, ${job.jobName}`}
-                                  className="w-full border-none bg-transparent text-right text-xs outline-none"
-                                />
-                              </td>
-                              <td className={cell(false)}>
-                                <ExecutionRateInput
-                                  jobId={job.id}
-                                  field="shopRate"
-                                  defaultValue={wholeNum(std.shopRate)}
-                                  disabled={standardSheetSubmitted}
-                                  ariaLabel={`Shop rate, ${job.jobName}`}
-                                  className="w-full border-none bg-transparent text-right text-xs outline-none"
-                                />
-                              </td>
-                              <td className={cell(false)}>
-                                <ExecutionRateInput
-                                  jobId={job.id}
-                                  field="partsMarkup"
-                                  defaultValue={std.partsMarkup.toString()}
-                                  disabled={standardSheetSubmitted}
-                                  ariaLabel={`Parts markup, ${job.jobName}`}
-                                  className="w-full border-none bg-transparent text-right text-xs outline-none"
-                                />
-                              </td>
-                              <td className={`${cell(false)} bg-sdc-blue-light/10`}>{wholeNum(std.etcEngineering)}</td>
-                              <td className={`${cell(false)} bg-sdc-blue-light/10`}>{wholeNum(std.etcShop)}</td>
-                              <td className={`${cell(false)} bg-sdc-blue-light/10`}>{currency(std.etcParts)}</td>
-                              <td className={`${cell(false)} bg-sdc-gray-50`}>{currency(std.totalEtcDollars)}</td>
-                              <td className={`${cell(false)} bg-sdc-gray-50`}>{percent(std.percentOfTotal)}</td>
-                              <td className={`${cell(false)} bg-[#D6E4F0]/40`}>{currency(std.standardFees)}</td>
-                              <td className={cell(false)}>{std.contingencyAmount ? currency(std.contingencyAmount) : "—"}</td>
-                              <td className={`${cell(false)} bg-sdc-yellow-bg/60 font-medium`}>{currency(std.totalStandardFees)}</td>
-                              <td className={`border-l border-sdc-border px-2 py-1 text-left text-xs text-sdc-gray-500 whitespace-nowrap`} title={std.notes}>
-                                {std.notes || "—"}
-                              </td>
+                              <EtcStandardCells job={std} />
                             </Fragment>
                           );
                         })()}
@@ -1041,27 +942,14 @@ export default async function MonthlyEtcPage({
                     })}
                     {showStandards && (
                       <Fragment key="standards-total">
-                        {/* Rates don't sum — the three rate columns stay blank in the total row. */}
-                        <td className={`${STD_EDGE} px-2 py-1`} />
-                        <td className="border-l border-sdc-border px-2 py-1" />
-                        <td className="border-l border-sdc-border px-2 py-1" />
-                        <td className="border-l border-sdc-border px-2 py-1" />
-                        <td className="border-l border-sdc-border px-2 py-1" />
-                        <td className="border-l border-sdc-border px-2 py-1" />
-                        <td className="border-l border-sdc-border px-2 py-1 text-right text-xs text-sdc-navy">{currency(standardGrand.totalEtcDollars)}</td>
-                        <td className="border-l border-sdc-border px-2 py-1 text-right text-xs text-sdc-navy">{percent(standardGrand.percentOfTotal)}</td>
-                        <td className="border-l border-sdc-border px-2 py-1 text-right text-xs text-sdc-navy">{currency(standardGrand.standardFees)}</td>
-                        <td className="border-l border-sdc-border px-2 py-1 text-right text-xs text-sdc-navy">
-                          {standardGrand.contingencyAmount ? currency(standardGrand.contingencyAmount) : "—"}
-                        </td>
-                        <td className="border-l border-sdc-border px-2 py-1 text-right text-xs font-semibold text-sdc-navy">{currency(standardGrand.totalStandardFees)}</td>
-                        <td className="border-l border-sdc-border px-2 py-1" />
+                        <StandardGrandCells />
                       </Fragment>
                     )}
                   </tr>
                 )}
               </tbody>
             </table>
+            </StandardRatesProvider>
           </div>
 
         </form>

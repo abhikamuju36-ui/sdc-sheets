@@ -148,6 +148,13 @@ export default async function JobDetailPage({
           </div>
           <StatusBadge variant={job.status === "Complete" ? "complete" : "active"}>{job.status}</StatusBadge>
         </div>
+        {estimatedHours.length === 0 && !job.totEtoSyncedAt && (
+          <p className="mb-4 rounded-lg border border-sdc-yellow bg-sdc-yellow-bg/40 px-3 py-2 text-xs text-sdc-yellow-text">
+            No TotalETO or Power BI data has synced for this job yet. If it was just created, this is expected until it
+            also exists upstream with a matching Job Id — try a sync again once it does, or double-check the Job Id
+            for a typo.
+          </p>
+        )}
         {job.startDate && (
           <p className="mb-4 text-xs text-sdc-gray-500">
             Start: {formatDate(job.startDate)}

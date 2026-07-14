@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createEmployee, updateEmployee, setEmployeeActive } from "@/lib/employee-actions";
 import { PageTitle } from "@/components/ui/Typography";
 import { StatusBadge } from "@/components/ui/StatusBadge";
-import { card, BUTTON_PRIMARY, BUTTON_SECONDARY, INPUT, LABEL, TABLE_HEADER_ROW, TABLE_ROW_HOVER, TABLE_GRID, TABLE_CARD } from "@/components/ui/classnames";
+import { card, BUTTON_PRIMARY, BUTTON_SECONDARY, INPUT, LABEL } from "@/components/ui/classnames";
 
 // Replaces the "Employees" tab of Project Planner Data Control.xlsx.
 // Soft-delete only: deactivating keeps every historical hour intact.
@@ -24,28 +24,29 @@ export default async function EmployeesPage({
   });
   const activeCount = employees.filter((e) => e.active).length;
 
-  const cellInput = `${INPUT} w-full px-2 py-1 text-xs`;
+  const cellInput = `${INPUT} w-full px-2.5 py-1.5 text-xs`;
+  const GRID_COLS = "grid-cols-[40px_minmax(160px,1fr)_180px_150px_140px_110px_170px]";
 
   return (
-    <div className="w-full max-w-5xl p-8">
+    <div className="w-full max-w-[1280px] px-8 py-10 md:px-13 md:py-11">
       <PageTitle className="mb-1">Employees</PageTitle>
-      <p className="mb-6 text-sm text-sdc-gray-600">
+      <p className="mb-7 text-sm text-sdc-gray-600">
         {`Replaces the Project Planner workbook's Employees tab. ${activeCount} active${showInactive ? `, ${employees.length - activeCount} inactive shown` : ""}. Deactivated employees keep all historical hours.`}
       </p>
 
       {/* Add */}
-      <form action={createEmployee} className={`${card()} mb-6`}>
-        <p className="mb-3 text-sm font-semibold text-sdc-navy">Add employee</p>
+      <form action={createEmployee} className={`${card("p-6")} mb-6`}>
+        <p className="mb-3.5 text-sm font-semibold text-sdc-navy">Add employee</p>
         <div className="flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1">
+          <label className="flex flex-col gap-1.5">
             <span className={LABEL}>Name *</span>
             <input name="name" required className={INPUT} placeholder="Full name" />
           </label>
-          <label className="flex flex-col gap-1">
+          <label className="flex flex-col gap-1.5">
             <span className={LABEL}>Department</span>
             <input name="department" className={INPUT} placeholder="e.g. Controls Engineering" />
           </label>
-          <label className="flex flex-col gap-1">
+          <label className="flex flex-col gap-1.5">
             <span className={LABEL}>Billing group</span>
             <select name="billingGroup" defaultValue="" className={INPUT}>
               <option value="">—</option>
@@ -53,7 +54,7 @@ export default async function EmployeesPage({
               <option value="Shop">Shop</option>
             </select>
           </label>
-          <label className="flex flex-col gap-1">
+          <label className="flex flex-col gap-1.5">
             <span className={LABEL}>Paylocity ID</span>
             <input name="paylocityId" className={INPUT} placeholder="optional" />
           </label>
@@ -64,84 +65,75 @@ export default async function EmployeesPage({
       </form>
 
       {/* Search / filter */}
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <form className="flex items-center gap-2">
+      <div className="mb-5 flex flex-wrap items-center gap-3">
+        <form className="flex items-center gap-2.5">
           {showInactive && <input type="hidden" name="show" value="inactive" />}
-          <input name="q" defaultValue={q} placeholder="Search name…" className={INPUT} />
+          <div className="flex items-center gap-2.5 rounded-lg border border-sdc-border bg-white px-3.5">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-sdc-gray-400">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input
+              name="q"
+              defaultValue={q}
+              placeholder="Search name…"
+              className="border-none bg-transparent py-2.5 text-sm text-sdc-navy outline-none placeholder:text-sdc-gray-400"
+            />
+          </div>
           <button type="submit" className={BUTTON_SECONDARY}>
             Search
           </button>
         </form>
         <a
           href={showInactive ? `/employees${q ? `?q=${encodeURIComponent(q)}` : ""}` : `/employees?show=inactive${q ? `&q=${encodeURIComponent(q)}` : ""}`}
-          className="text-xs text-sdc-blue underline hover:text-sdc-blue-dark"
+          className="rounded-lg bg-sdc-gray-100 px-3.5 py-2 text-xs font-semibold text-sdc-gray-600 transition-colors hover:text-sdc-navy"
         >
           {showInactive ? "Hide inactive" : "Show inactive"}
         </a>
       </div>
 
-      {/* List — row edit forms live outside the table (HTML forbids <form> in <tr>), linked via the form attribute. */}
-      <div className={TABLE_CARD}>
-        <table className={`w-full text-sm ${TABLE_GRID}`}>
-          <thead>
-            <tr className={TABLE_HEADER_ROW}>
-              <th className="w-10 px-2 py-3 text-center">#</th>
-              <th className="px-4 py-3">Name</th>
-              <th className="px-3 py-3">Department</th>
-              <th className="px-3 py-3">Billing group</th>
-              <th className="px-3 py-3">Paylocity ID</th>
-              <th className="px-3 py-3">Status</th>
-              <th className="px-3 py-3 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {employees.map((e, i) => (
-              <tr key={e.id} className={`${TABLE_ROW_HOVER} ${i % 2 === 1 ? "bg-sdc-gray-50/60" : ""}`}>
-                <td className="px-2 py-2 text-center text-sdc-gray-400">{i + 1}</td>
-                <td className="px-4 py-2">
-                  <input name="name" defaultValue={e.name} required form={`emp-${e.id}`} className={cellInput} aria-label={`Name, ${e.name}`} />
-                </td>
-                <td className="px-3 py-2">
-                  <input name="department" defaultValue={e.department ?? ""} form={`emp-${e.id}`} className={cellInput} aria-label={`Department, ${e.name}`} />
-                </td>
-                <td className="px-3 py-2">
-                  <select name="billingGroup" defaultValue={e.billingGroup ?? ""} form={`emp-${e.id}`} className={cellInput} aria-label={`Billing group, ${e.name}`}>
-                    <option value="">—</option>
-                    <option value="Engineering">Engineering</option>
-                    <option value="Shop">Shop</option>
-                  </select>
-                </td>
-                <td className="px-3 py-2">
-                  <input name="paylocityId" defaultValue={e.paylocityId ?? ""} form={`emp-${e.id}`} className={`${cellInput} font-mono`} aria-label={`Paylocity ID, ${e.name}`} />
-                </td>
-                <td className="px-3 py-2">
-                  <StatusBadge variant={e.active ? "active" : "neutral"}>{e.active ? "Active" : "Inactive"}</StatusBadge>
-                </td>
-                <td className="px-3 py-2 text-right">
-                  <div className="flex justify-end gap-2">
-                    <button type="submit" form={`emp-${e.id}`} className={`${BUTTON_SECONDARY} px-2.5 py-1 text-xs`}>
-                      Save
-                    </button>
-                    <button
-                      type="submit"
-                      form={`emp-toggle-${e.id}`}
-                      className={`${BUTTON_SECONDARY} px-2.5 py-1 text-xs ${e.active ? "text-red-700" : ""}`}
-                    >
-                      {e.active ? "Deactivate" : "Reactivate"}
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {employees.length === 0 && (
-              <tr>
-                <td colSpan={7} className="px-4 py-5 text-sdc-gray-400">
-                  No employees found.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      {/* List — row edit forms live outside the grid (HTML forbids <form> in <tr>), linked via the form attribute. */}
+      <div className={`${card("p-0")} overflow-x-auto`}>
+        <div className={`grid ${GRID_COLS} min-w-[1080px] items-center gap-4 border-b border-sdc-border-soft bg-sdc-gray-50/60 px-6 py-3`}>
+          {["#", "Name", "Department", "Billing group", "Paylocity ID", "Status", "Actions"].map((h) => (
+            <span key={h} className={`text-[11px] font-semibold tracking-wider text-sdc-gray-400 uppercase ${h === "Actions" ? "text-right" : ""}`}>
+              {h}
+            </span>
+          ))}
+        </div>
+        <div className="divide-y divide-sdc-border-soft">
+          {employees.map((e, i) => (
+            <div key={e.id} className={`grid ${GRID_COLS} min-w-[1080px] items-center gap-4 px-6 py-2.5 transition-colors hover:bg-sdc-blue-light/30`}>
+              <span className="text-sm text-sdc-gray-400 tabular-nums">{i + 1}</span>
+              <input name="name" defaultValue={e.name} required form={`emp-${e.id}`} className={cellInput} aria-label={`Name, ${e.name}`} />
+              <input name="department" defaultValue={e.department ?? ""} form={`emp-${e.id}`} className={cellInput} aria-label={`Department, ${e.name}`} />
+              <select name="billingGroup" defaultValue={e.billingGroup ?? ""} form={`emp-${e.id}`} className={cellInput} aria-label={`Billing group, ${e.name}`}>
+                <option value="">—</option>
+                <option value="Engineering">Engineering</option>
+                <option value="Shop">Shop</option>
+              </select>
+              <input name="paylocityId" defaultValue={e.paylocityId ?? ""} form={`emp-${e.id}`} className={`${cellInput} font-mono`} aria-label={`Paylocity ID, ${e.name}`} />
+              <StatusBadge variant={e.active ? "active" : "neutral"}>{e.active ? "Active" : "Inactive"}</StatusBadge>
+              <div className="flex justify-end gap-2">
+                <button type="submit" form={`emp-${e.id}`} className="rounded-md border border-sdc-border px-2.5 py-1 text-xs font-semibold text-sdc-navy transition-colors hover:bg-sdc-blue-light">
+                  Save
+                </button>
+                <button
+                  type="submit"
+                  form={`emp-toggle-${e.id}`}
+                  className={
+                    e.active
+                      ? "rounded-md border border-[#F0D6D6] px-2.5 py-1 text-xs font-semibold text-[#B03A3A] transition-colors hover:bg-[#FBEDED]"
+                      : "rounded-md border border-sdc-border px-2.5 py-1 text-xs font-semibold text-sdc-navy transition-colors hover:bg-sdc-blue-light"
+                  }
+                >
+                  {e.active ? "Deactivate" : "Reactivate"}
+                </button>
+              </div>
+            </div>
+          ))}
+          {employees.length === 0 && <p className="px-6 py-5 text-sm text-sdc-gray-400">No employees found.</p>}
+        </div>
       </div>
 
       {employees.map((e) => (

@@ -10,6 +10,13 @@ export const validJobTypeFilter = { type: { in: [...VALID_JOB_TYPES] } };
 // for jobs the grid never renders and the month can never be submitted.
 export const etcActiveJobFilter = { status: "Active", completeDate: null, ...validJobTypeFilter };
 
+// SDC's own internal projects (Customer = "SDC") are never billable to an
+// outside customer — this overrides whatever the Billable dropdown is set to,
+// both when saving and for any job already in the database.
+export function isSdcCustomer(customer: string | null | undefined): boolean {
+  return (customer ?? "").trim().toUpperCase() === "SDC";
+}
+
 // Job Ids are stored as strings but are (almost always) numbers — a plain
 // string sort puts "10000" before "979". Sort numerically like the sheet did,
 // falling back to string comparison for any non-numeric Id.

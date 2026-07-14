@@ -63,9 +63,12 @@ export async function syncFromTotalEto(): Promise<{ jobsUpdated: number; skipped
 
     const existingJobs = await prisma.job.findMany({
       where: { jobId: { in: projects.recordset.map((p) => String(p["Job ID"])) }, type: { in: [...VALID_JOB_TYPES] } },
-      select: { jobId: true },
+      select: { jobId: true, customerManuallyEdited: true },
     });
     const existingJobIds = new Set(existingJobs.map((j) => j.jobId));
+    // A manager's manual Customer edit on the Projects tab must survive this
+    // sync instead of being silently overwritten — see customerManuallyEdited.
+    const manuallyEditedJobIds = new Set(existingJobs.filter((j) => j.customerManuallyEdited).map((j) => j.jobId));
 
     let jobsUpdated = 0;
     let skippedNoType = 0;
@@ -81,7 +84,7 @@ export async function syncFromTotalEto(): Promise<{ jobsUpdated: number; skipped
       await prisma.job.update({
         where: { jobId },
         data: {
-          customer: p.Customer,
+          ...(manuallyEditedJobIds.has(jobId) ? {} : { customer: p.Customer }),
           totEtoEstEngHours: c?.EstEngHours ?? undefined,
           totEtoActEngHours: c?.ActEngHours ?? undefined,
           totEtoEstMfgHours: c?.EstMfgHours ?? undefined,
