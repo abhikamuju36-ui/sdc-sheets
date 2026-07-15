@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useMemo } from "react";
 import {
   calcTotalEtcDollars,
   calcPercentOfTotal,
@@ -8,26 +8,17 @@ import {
   calcStandardFeeShop,
   calcTotalStandardFees,
 } from "@/lib/standard-fees";
-import { saveExecutionRateField } from "@/lib/execution-rate-actions";
 
 // Same weight/treatment as the Monthly ETC grid's other block dividers.
 const STD_EDGE = "border-l-[33px]! border-l-[#808080]!";
 
-function wholeNum(n: number): string {
-  return Math.round(n).toString();
-}
 function currency(n: number): string {
   return n.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 }
 function percent(n: number): string {
   return (n * 100).toLocaleString(undefined, { maximumFractionDigits: 2 }) + "%";
 }
-function num(s: string): number {
-  const n = Number(s);
-  return Number.isFinite(n) ? n : 0;
-}
-
-type RateField = "engrRate" | "shopRate" | "partsMarkup";
+export type StandardRates = { engrRate: number; shopRate: number; partsMarkup: number };
 
 export type StandardJobBase = {
   jobId: number;
@@ -35,9 +26,6 @@ export type StandardJobBase = {
   etcEngineering: number;
   etcShop: number;
   etcParts: number;
-  engrRate: number;
-  shopRate: number;
-  partsMarkup: number;
   contingencyAmount: number;
   notes: string;
 };
@@ -61,55 +49,32 @@ type StandardGrandTotals = {
 type Ctx = {
   getComputed: (jobId: number) => StandardComputed | undefined;
   getGrandTotals: () => StandardGrandTotals;
-  getRateText: (jobId: number, field: RateField) => string;
-  setRateText: (jobId: number, field: RateField, value: string) => void;
-  disabled: boolean;
 };
 
 const StandardRatesCtx = createContext<Ctx | null>(null);
 
 // The ETC grid's inline "Standard Sheet" columns mirror /standard-sheet's own
-// rate/fee math (see StandardSheetLive.tsx for the primary tab's version of
-// this same fix). Rate edits here used to autosave via ExecutionRateInput but
-// never live-updated Total ETC $/% Total/Standard Fees/Total Standard Fees —
-// same gap as everywhere else a rate feeds derived cells, and worse here
-// since % Total depends on every job's rate at once, so all rows' rate state
-// has to live in one shared provider, not per-row.
+// rate/fee math. Rates are now a single global set (entered via the "ETC Rates"
+// toolbar button, stored on StandardSheetSetting) applied to every job here, so
+// there are no per-row rate inputs — a rate change reruns the whole block
+// (% Total depends on every job's Total ETC $ at once) after the server
+// revalidates this page.
 export function StandardRatesProvider({
   jobs,
+  rates,
   poolTotals,
   contingencyRate,
-  disabled,
   children,
 }: {
   jobs: StandardJobBase[];
+  rates: StandardRates;
   poolTotals: PoolTotals;
   contingencyRate: number;
-  disabled: boolean;
   children: React.ReactNode;
 }) {
-  const [rateText, setRateTextState] = useState<Record<number, Record<RateField, string>>>(() =>
-    Object.fromEntries(
-      jobs.map((j) => [j.jobId, { engrRate: String(j.engrRate), shopRate: String(j.shopRate), partsMarkup: String(j.partsMarkup) }])
-    )
-  );
-
-  function setRateText(jobId: number, field: RateField, value: string) {
-    setRateTextState((prev) => ({ ...prev, [jobId]: { ...prev[jobId], [field]: value } }));
-  }
-  function getRateText(jobId: number, field: RateField): string {
-    return rateText[jobId]?.[field] ?? "0";
-  }
-
   const computedByJob = useMemo(() => {
     const withTotals = jobs.map((j) => {
-      const rt = rateText[j.jobId];
-      const rate = {
-        engrRate: num(rt?.engrRate ?? String(j.engrRate)),
-        shopRate: num(rt?.shopRate ?? String(j.shopRate)),
-        partsMarkup: num(rt?.partsMarkup ?? String(j.partsMarkup)),
-      };
-      const totalEtcDollars = calcTotalEtcDollars({ engineering: j.etcEngineering, shop: j.etcShop, parts: j.etcParts }, rate);
+      const totalEtcDollars = calcTotalEtcDollars({ engineering: j.etcEngineering, shop: j.etcShop, parts: j.etcParts }, rates);
       return { ...j, totalEtcDollars };
     });
     const grandTotal = withTotals.reduce((sum, r) => sum + r.totalEtcDollars, 0);
@@ -133,7 +98,7 @@ export function StandardRatesProvider({
       });
     }
     return map;
-  }, [jobs, rateText, poolTotals, contingencyRate]);
+  }, [jobs, rates, poolTotals, contingencyRate]);
 
   const grandTotals = useMemo<StandardGrandTotals>(() => {
     const acc = { totalEtcDollars: 0, percentOfTotal: 0, standardFees: 0, contingencyAmount: 0, totalStandardFees: 0 };
@@ -149,7 +114,7 @@ export function StandardRatesProvider({
     return acc;
   }, [jobs, computedByJob]);
 
-  const ctx: Ctx = { getComputed: (jobId) => computedByJob.get(jobId), getGrandTotals: () => grandTotals, getRateText, setRateText, disabled };
+  const ctx: Ctx = { getComputed: (jobId) => computedByJob.get(jobId), getGrandTotals: () => grandTotals };
   return <StandardRatesCtx.Provider value={ctx}>{children}</StandardRatesCtx.Provider>;
 }
 
@@ -159,43 +124,10 @@ function useStandardRates(): Ctx {
   return ctx;
 }
 
-function RateInput({ jobId, field, ariaLabel }: { jobId: number; field: RateField; ariaLabel: string }) {
-  const { getRateText, setRateText, disabled } = useStandardRates();
-  const text = getRateText(jobId, field);
-  const lastSaved = useRef(text);
-
-  async function handleBlur() {
-    const raw = text.trim();
-    if (raw === lastSaved.current) return;
-    const parsed = Number(raw);
-    if (!Number.isFinite(parsed) || parsed < 0) return;
-    try {
-      await saveExecutionRateField(jobId, field, parsed);
-      lastSaved.current = raw;
-    } catch {
-      // Best-effort autosave, same as ExecutionRateInput — the typed value
-      // stays on screen and retries as "changed" on the next blur.
-    }
-  }
-
-  return (
-    <input
-      type="number"
-      step="0.01"
-      min="0"
-      value={text}
-      onChange={(e) => setRateText(jobId, field, e.target.value)}
-      onBlur={handleBlur}
-      disabled={disabled}
-      aria-label={ariaLabel}
-      className="w-full border-none bg-transparent text-right text-xs outline-none"
-    />
-  );
-}
-
 // Renders one job's Standard Sheet Fragment inside the Monthly ETC grid's
-// row — same column order/styling as before, now reading live totals from
-// StandardRatesProvider instead of a static server-computed prop.
+// row — reads live totals from StandardRatesProvider (driven by the global
+// ETC Rates). The per-job ENGR/Shop/Parts rate columns were removed; those
+// rates are now set once via the "ETC Rates" toolbar button.
 export function EtcStandardCells({ job }: { job: StandardJobBase }) {
   const { getComputed } = useStandardRates();
   const std = getComputed(job.jobId);
@@ -205,19 +137,7 @@ export function EtcStandardCells({ job }: { job: StandardJobBase }) {
 
   return (
     <>
-      <td className={cell(true)}>
-        <RateInput jobId={job.jobId} field="engrRate" ariaLabel={`ENGR rate, ${job.jobName}`} />
-      </td>
-      <td className={cell(false)}>
-        <RateInput jobId={job.jobId} field="shopRate" ariaLabel={`Shop rate, ${job.jobName}`} />
-      </td>
-      <td className={cell(false)}>
-        <RateInput jobId={job.jobId} field="partsMarkup" ariaLabel={`Parts markup, ${job.jobName}`} />
-      </td>
-      <td className={`${cell(false)} bg-sdc-blue-light/10`}>{wholeNum(job.etcEngineering)}</td>
-      <td className={`${cell(false)} bg-sdc-blue-light/10`}>{wholeNum(job.etcShop)}</td>
-      <td className={`${cell(false)} bg-sdc-blue-light/10`}>{currency(job.etcParts)}</td>
-      <td className={`${cell(false)} bg-sdc-gray-50`}>{currency(std.totalEtcDollars)}</td>
+      <td className={`${cell(true)} bg-sdc-gray-50`}>{currency(std.totalEtcDollars)}</td>
       <td className={`${cell(false)} bg-sdc-gray-50`}>{percent(std.percentOfTotal)}</td>
       <td className={`${cell(false)} bg-[#D6E4F0]/40`}>{currency(std.standardFees)}</td>
       <td className={cell(false)}>{job.contingencyAmount ? currency(job.contingencyAmount) : "—"}</td>
@@ -237,14 +157,7 @@ export function StandardGrandCells() {
 
   return (
     <>
-      {/* Rates don't sum — the three rate columns stay blank in the total row. */}
-      <td className={`${STD_EDGE} px-2 py-1`} />
-      <td className="border-l border-sdc-border px-2 py-1" />
-      <td className="border-l border-sdc-border px-2 py-1" />
-      <td className="border-l border-sdc-border px-2 py-1" />
-      <td className="border-l border-sdc-border px-2 py-1" />
-      <td className="border-l border-sdc-border px-2 py-1" />
-      <td className="border-l border-sdc-border px-2 py-1 text-right text-xs text-sdc-navy">{currency(grand.totalEtcDollars)}</td>
+      <td className={`${STD_EDGE} px-2 py-1 text-right text-xs text-sdc-navy`}>{currency(grand.totalEtcDollars)}</td>
       <td className="border-l border-sdc-border px-2 py-1 text-right text-xs text-sdc-navy">{percent(grand.percentOfTotal)}</td>
       <td className="border-l border-sdc-border px-2 py-1 text-right text-xs text-sdc-navy">{currency(grand.standardFees)}</td>
       <td className="border-l border-sdc-border px-2 py-1 text-right text-xs text-sdc-navy">

@@ -247,6 +247,13 @@ model ExecutionRate {
 model StandardSheetSetting {
   id              Int     @id @default(1)
   contingencyRate Decimal @db.Decimal(6, 2) @default(1.2)
+  // Global execution rates for the Monthly ETC grid's inline Standard Sheet
+  // view — entered once via the "ETC Rates" button and applied to every job on
+  // that page (the per-job override columns were removed). The /standard-sheet
+  // tab keeps its own per-job ExecutionRate rows.
+  engrRate        Decimal @db.Decimal(10, 2) @default(170)
+  shopRate        Decimal @db.Decimal(10, 2) @default(140)
+  partsMarkup     Decimal @db.Decimal(10, 4) @default(1.2)
 }
 
 // Frozen per-job, per-month record of the Standard Sheet — the app's version

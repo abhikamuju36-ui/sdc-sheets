@@ -6,7 +6,8 @@ import { getEtcMonthJobWhere } from "@/lib/etc-month-jobs";
 import { EtcDraftInput } from "@/components/EtcDraftInput";
 import { EtcSectionCells } from "@/components/EtcSectionCells";
 import { StandardRatesProvider, EtcStandardCells, StandardGrandCells } from "@/components/EtcStandardColumns";
-import type { StandardJobBase, PoolTotals } from "@/components/EtcStandardColumns";
+import type { StandardJobBase, PoolTotals, StandardRates } from "@/components/EtcStandardColumns";
+import { EtcRatesButton } from "@/components/EtcRatesButton";
 import { ETC_SECTIONS, PARTS_COST_SECTION } from "@/lib/sections";
 import { calcHoursLeft, suggestNewEtc, isMonthLocked, isValidMonth, nextMonth, round2 } from "@/lib/etc";
 import { submitMonth, reopenMonth, syncPowerBiForEtc, syncEtcHistory } from "@/lib/etc-actions";
@@ -211,8 +212,6 @@ function currency(n: number) {
 // ETC, the merged Standard Fees (Engineering + Shop as one), Contingency,
 // Total Standard Fees, Notes. Display-only here (editing lives on /standard-sheet).
 const STANDARD_LEAF_COLUMNS = [
-  "ENGR", "Shop", "Parts",
-  "Eng ETC", "Shop ETC", "Parts ETC",
   "Total ETC", "% Total",
   "Standard Fees",
   "Contingency",
@@ -247,9 +246,14 @@ function currentMonth() {
 export default async function MonthlyEtcPage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string; dept?: string }>;
+  searchParams: Promise<{ month?: string; dept?: string; standards?: string }>;
 }) {
-  const { month: monthParam, dept: deptParam } = await searchParams;
+  const { month: monthParam, dept: deptParam, standards: standardsParam } = await searchParams;
+  // The Standard Sheet entry point is hidden by design (only a few people know
+  // it exists). The password box renders only when this secret flag is present
+  // — reached by right-clicking the "Monthly ETC" sidebar item. It never shows
+  // on the plain /etc URL, so it's not discoverable by browsing the page.
+  const standardsRevealRequested = standardsParam === "1";
 
   // Engineering / Shop column filter. Empty or absent => show both (the full
   // grid); the grid can never collapse to zero section columns.
@@ -389,6 +393,9 @@ export default async function MonthlyEtcPage({
   const standardByJob = new Map<number, StandardJobBase>();
   let poolTotals: PoolTotals = { engineeringPM: 0, engineeringWarranty: 0, shopManufacturing: 0, shopWarranty: 0 };
   let contingencyRate = 1.2;
+  // Global execution rates applied to every job in this grid's Standard view —
+  // set via the "ETC Rates" button, stored on the StandardSheetSetting row.
+  let standardRates: StandardRates = { engrRate: 170, shopRate: 140, partsMarkup: 1.2 };
 
   if (showStandards) {
     const [execEtcByJob, pools, setting] = await Promise.all([
@@ -397,6 +404,11 @@ export default async function MonthlyEtcPage({
       prisma.standardSheetSetting.findUnique({ where: { id: 1 } }),
     ]);
     contingencyRate = setting ? Number(setting.contingencyRate) : 1.2;
+    standardRates = {
+      engrRate: setting ? Number(setting.engrRate) : 170,
+      shopRate: setting ? Number(setting.shopRate) : 140,
+      partsMarkup: setting ? Number(setting.partsMarkup) : 1.2,
+    };
     poolTotals = {
       engineeringPM: Number(pools.find((p) => p.category === "ENGINEERING_PM")?.standardFee ?? 0),
       engineeringWarranty: Number(pools.find((p) => p.category === "ENGINEERING_WARRANTY")?.standardFee ?? 0),
@@ -412,9 +424,6 @@ export default async function MonthlyEtcPage({
         etcEngineering: etc.engineering,
         etcShop: etc.shop,
         etcParts: etc.parts,
-        engrRate: job.executionRate ? Number(job.executionRate.engrRate) : 170,
-        shopRate: job.executionRate ? Number(job.executionRate.shopRate) : 140,
-        partsMarkup: job.executionRate ? Number(job.executionRate.partsMarkup) : 1.2,
         contingencyAmount: job.executionRate ? Number(job.executionRate.contingencyAmount) : 0,
         notes: job.executionRate?.notes ?? "",
       });
@@ -479,12 +488,20 @@ export default async function MonthlyEtcPage({
         {/* Password-gated Standard Sheet columns (Dan/Lisa only) — same
             unlock cookie as the /standard-sheet tab. */}
         {showStandards ? (
-          <form action={lockStandardSheet}>
-            <button type="submit" className={BUTTON_SECONDARY}>
-              Hide Standards
-            </button>
-          </form>
-        ) : (
+          <>
+            <form action={lockStandardSheet}>
+              <button type="submit" className={BUTTON_SECONDARY}>
+                Hide Standards
+              </button>
+            </form>
+            <EtcRatesButton
+              engrRate={standardRates.engrRate}
+              shopRate={standardRates.shopRate}
+              partsMarkup={standardRates.partsMarkup}
+              disabled={standardSheetSubmitted}
+            />
+          </>
+        ) : standardsRevealRequested ? (
           <form action={unlockStandardSheet} className="flex items-center gap-2">
             <input
               type="password"
@@ -498,7 +515,7 @@ export default async function MonthlyEtcPage({
             </button>
             {standardWrongPassword && <span className="text-xs text-red-600">Wrong password</span>}
           </form>
-        )}
+        ) : null}
         <StatusBadge variant={!started ? "notStarted" : locked ? "locked" : "needsReview"}>
           {!started ? "Not started" : locked ? "Locked (submitted)" : `In progress — ${needsReviewCount} pending`}
         </StatusBadge>
@@ -532,9 +549,9 @@ export default async function MonthlyEtcPage({
           <div className="max-h-[calc(100vh-260px)] min-w-[480px] overflow-auto border border-sdc-border border-t-[#808080] bg-white shadow-sm select-none styled-scrollbar">
             <StandardRatesProvider
               jobs={[...standardByJob.values()]}
+              rates={standardRates}
               poolTotals={poolTotals}
               contingencyRate={contingencyRate}
-              disabled={standardSheetSubmitted}
             >
             <table className={`w-full text-sm ${TABLE_GRID}`}>
               <thead className="sticky top-0 z-20 bg-sdc-gray-100">
@@ -551,11 +568,11 @@ export default async function MonthlyEtcPage({
                       {p.label}
                     </th>
                   ))}
-                  <th colSpan={PARTS_COST_SUB_COLUMNS.length} className={`${PHASE_EDGE} bg-sdc-gray-100 px-3 py-1.5 text-center text-sdc-gray-700`}>
-                    Parts Cost
-                  </th>
                   <th colSpan={visibleGroups.length * TOTAL_SUB_COLUMNS.length} className={`${PHASE_EDGE} bg-[#FDFDE3] px-3 py-1.5 text-center text-sdc-navy`}>
                     Total (New ETC)
+                  </th>
+                  <th colSpan={PARTS_COST_SUB_COLUMNS.length} className={`${PHASE_EDGE} bg-sdc-gray-100 px-3 py-1.5 text-center text-sdc-gray-700`}>
+                    Parts Cost
                   </th>
                   {showStandards && (
                     <th
@@ -581,16 +598,16 @@ export default async function MonthlyEtcPage({
                       );
                     });
                   })()}
-                  {/* Parts Cost has no Engineering/Shop split — one green Total
-                      block spanning down to the column-label row, as printed. */}
-                  <th rowSpan={3} colSpan={PARTS_COST_SUB_COLUMNS.length} className={`${PHASE_EDGE} bg-[#00B050] px-2 py-1 text-center text-white`}>
-                    Total
-                  </th>
                   {visibleGroups.map((group, i) => (
                     <th key={group} colSpan={TOTAL_SUB_COLUMNS.length} className={`${i === 0 ? PHASE_EDGE : "border-l border-sdc-border"} bg-[#FDFDE3] px-2 py-1 text-center font-medium text-sdc-navy`}>
                       {group}
                     </th>
                   ))}
+                  {/* Parts Cost has no Engineering/Shop split — one green Total
+                      block spanning down to the column-label row, as printed. */}
+                  <th rowSpan={3} colSpan={PARTS_COST_SUB_COLUMNS.length} className={`${PHASE_EDGE} bg-[#00B050] px-2 py-1 text-center text-white`}>
+                    Total
+                  </th>
                 </tr>
                 {/* Sub-group row: ME / CE / General Engineering / dept abbreviations. */}
                 <tr className={TABLE_HEADER_ROW}>
@@ -654,16 +671,6 @@ export default async function MonthlyEtcPage({
                       </th>
                     ))
                   )}
-                  {PARTS_COST_SUB_COLUMNS.map((col, i) => (
-                    <th
-                      key={`parts-cost-${col}`}
-                      className={`${i === 0 ? PHASE_EDGE : "border-l border-sdc-border"} px-1 py-1.5 text-right text-[10px] ${
-                        subColHeaderBg(col) || "bg-sdc-gray-100 text-sdc-gray-700"
-                      }`}
-                    >
-                      {colHeaderLabel(col)}
-                    </th>
-                  ))}
                   {visibleGroups.map((group, gi) =>
                     TOTAL_SUB_COLUMNS.map((col, ci) => (
                       <th
@@ -676,6 +683,16 @@ export default async function MonthlyEtcPage({
                       </th>
                     ))
                   )}
+                  {PARTS_COST_SUB_COLUMNS.map((col, i) => (
+                    <th
+                      key={`parts-cost-${col}`}
+                      className={`${i === 0 ? PHASE_EDGE : "border-l border-sdc-border"} px-1 py-1.5 text-right text-[10px] ${
+                        subColHeaderBg(col) || "bg-sdc-gray-100 text-sdc-gray-700"
+                      }`}
+                    >
+                      {colHeaderLabel(col)}
+                    </th>
+                  ))}
                   {showStandards &&
                     STANDARD_LEAF_COLUMNS.map((col, i) => (
                       <th
@@ -767,6 +784,32 @@ export default async function MonthlyEtcPage({
                           </Fragment>
                         );
                       })}
+                      {visibleGroups.map((group, gi) => {
+                        const hoursLeft = totals[group].prior - totals[group].worked;
+                        const diff = hoursLeft - totals[group].newEtc;
+                        groupGrandTotals[group].prior += totals[group].prior;
+                        groupGrandTotals[group].worked += totals[group].worked;
+                        groupGrandTotals[group].newEtc += totals[group].newEtc;
+                        return (
+                          <Fragment key={group}>
+                            <td className={`${gi === 0 ? PHASE_EDGE : "border-l border-sdc-border"} bg-[#5E91D3] px-1 py-1 text-right text-xs text-sdc-gray-700`}>
+                              {wholeNum(totals[group].prior)}
+                            </td>
+                            <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1 text-right text-xs text-sdc-gray-500`}>
+                              {wholeNum(totals[group].worked)}
+                            </td>
+                            <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-1 py-1 text-right text-xs text-sdc-gray-500`}>
+                              {wholeNum(hoursLeft)}
+                            </td>
+                            <td className={`border-l border-sdc-border ${newEtcBg(true)} px-1 py-1 text-right text-xs font-medium text-sdc-navy`}>
+                              {wholeNum(totals[group].newEtc)}
+                            </td>
+                            <td className={`border-l border-sdc-border ${diffBg(diff)} px-1 py-1 text-right text-xs text-sdc-gray-700`}>
+                              {wholeNum(diff)}
+                            </td>
+                          </Fragment>
+                        );
+                      })}
                       {(() => {
                         const partsCostEntry = entryByCode.get(PARTS_COST_SECTION);
                         if (!partsCostEntry) {
@@ -839,32 +882,6 @@ export default async function MonthlyEtcPage({
                           </Fragment>
                         );
                       })()}
-                      {visibleGroups.map((group, gi) => {
-                        const hoursLeft = totals[group].prior - totals[group].worked;
-                        const diff = hoursLeft - totals[group].newEtc;
-                        groupGrandTotals[group].prior += totals[group].prior;
-                        groupGrandTotals[group].worked += totals[group].worked;
-                        groupGrandTotals[group].newEtc += totals[group].newEtc;
-                        return (
-                          <Fragment key={group}>
-                            <td className={`${gi === 0 ? PHASE_EDGE : "border-l border-sdc-border"} bg-[#5E91D3] px-1 py-1 text-right text-xs text-sdc-gray-700`}>
-                              {wholeNum(totals[group].prior)}
-                            </td>
-                            <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1 text-right text-xs text-sdc-gray-500`}>
-                              {wholeNum(totals[group].worked)}
-                            </td>
-                            <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-1 py-1 text-right text-xs text-sdc-gray-500`}>
-                              {wholeNum(hoursLeft)}
-                            </td>
-                            <td className={`border-l border-sdc-border ${newEtcBg(true)} px-1 py-1 text-right text-xs font-medium text-sdc-navy`}>
-                              {wholeNum(totals[group].newEtc)}
-                            </td>
-                            <td className={`border-l border-sdc-border ${diffBg(diff)} px-1 py-1 text-right text-xs text-sdc-gray-700`}>
-                              {wholeNum(diff)}
-                            </td>
-                          </Fragment>
-                        );
-                      })}
                       {showStandards &&
                         (() => {
                           const std = standardByJob.get(job.id);
@@ -912,20 +929,6 @@ export default async function MonthlyEtcPage({
                         </Fragment>
                       );
                     })}
-                    {(() => {
-                      const t = partsCostGrandTotal;
-                      const moneyLeft = t.prior - t.worked;
-                      const diffCost = moneyLeft - t.newEtc;
-                      return (
-                        <Fragment key="parts-cost-total">
-                          <td className={`${PHASE_EDGE} bg-[#5E91D3] px-1 py-1 text-right text-xs text-sdc-gray-700`}>{currency(t.prior)}</td>
-                          <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1 text-right text-xs text-sdc-navy`}>{currency(t.worked)}</td>
-                          <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-1 py-1 text-right text-xs text-sdc-navy`}>{currency(moneyLeft)}</td>
-                          <td className={`border-l border-sdc-border ${newEtcBg(true)} px-1 py-1 text-right text-xs text-sdc-navy`}>{currency(t.newEtc)}</td>
-                          <td className={`border-l border-sdc-border ${diffBg(diffCost)} px-1 py-1 text-right text-xs text-sdc-gray-700`}>{currency(diffCost)}</td>
-                        </Fragment>
-                      );
-                    })()}
                     {visibleGroups.map((group, gi) => {
                       const t = groupGrandTotals[group];
                       const hoursLeft = t.prior - t.worked;
@@ -940,6 +943,20 @@ export default async function MonthlyEtcPage({
                         </Fragment>
                       );
                     })}
+                    {(() => {
+                      const t = partsCostGrandTotal;
+                      const moneyLeft = t.prior - t.worked;
+                      const diffCost = moneyLeft - t.newEtc;
+                      return (
+                        <Fragment key="parts-cost-total">
+                          <td className={`${PHASE_EDGE} bg-[#5E91D3] px-1 py-1 text-right text-xs text-sdc-gray-700`}>{currency(t.prior)}</td>
+                          <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1 text-right text-xs text-sdc-navy`}>{currency(t.worked)}</td>
+                          <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-1 py-1 text-right text-xs text-sdc-navy`}>{currency(moneyLeft)}</td>
+                          <td className={`border-l border-sdc-border ${newEtcBg(true)} px-1 py-1 text-right text-xs text-sdc-navy`}>{currency(t.newEtc)}</td>
+                          <td className={`border-l border-sdc-border ${diffBg(diffCost)} px-1 py-1 text-right text-xs text-sdc-gray-700`}>{currency(diffCost)}</td>
+                        </Fragment>
+                      );
+                    })()}
                     {showStandards && (
                       <Fragment key="standards-total">
                         <StandardGrandCells />

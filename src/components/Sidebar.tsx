@@ -2,8 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useState, useSyncExternalStore } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useRef, useState, useSyncExternalStore } from "react";
 
 const COLLAPSE_KEY = "sdc-etc-planner-sidebar-collapsed";
 const WIDTH_KEY = "sdc-etc-planner-sidebar-width";
@@ -214,7 +214,32 @@ export default function Sidebar({
   signOutAction: () => Promise<void>;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const groups = role === "ADMIN" ? [...GROUPS, ADMIN_GROUP] : GROUPS;
+
+  // Hidden entry point for the password-gated Standard Sheet columns: the box
+  // that reveals them is intentionally undiscoverable on the /etc page itself
+  // (only a few people are meant to know it exists). Clicking the "Monthly ETC"
+  // item three times in quick succession takes you to /etc with the secret flag
+  // that renders the password box; a normal single click just opens /etc.
+  const etcClickCount = useRef(0);
+  const etcClickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function handleEtcClick(e: React.MouseEvent) {
+    etcClickCount.current += 1;
+    if (etcClickTimer.current) clearTimeout(etcClickTimer.current);
+    if (etcClickCount.current >= 3) {
+      etcClickCount.current = 0;
+      e.preventDefault();
+      router.push("/etc?standards=1");
+      return;
+    }
+    // Reset the streak if the next click doesn't land within the window. Kept
+    // generous so the third click reliably lands the first time — each click
+    // also navigates to /etc, so the window has to absorb that latency.
+    etcClickTimer.current = setTimeout(() => {
+      etcClickCount.current = 0;
+    }, 1500);
+  }
   const collapsed = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const persistedWidth = useSyncExternalStore(subscribeWidth, getWidthSnapshot, getServerWidthSnapshot);
   const [dragWidth, setDragWidth] = useState<number | null>(null);
@@ -293,6 +318,7 @@ export default function Sidebar({
                   <Link
                     key={item.href}
                     href={item.href}
+                    onClick={item.href === "/etc" ? handleEtcClick : undefined}
                     title={collapsed ? item.label : undefined}
                     className={`flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium transition-colors ${
                       collapsed ? "justify-center" : ""

@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE `standardsheetsetting` ADD COLUMN `engrRate` DECIMAL(10, 2) NOT NULL DEFAULT 170,
+    ADD COLUMN `partsMarkup` DECIMAL(10, 4) NOT NULL DEFAULT 1.2,
+    ADD COLUMN `shopRate` DECIMAL(10, 2) NOT NULL DEFAULT 140;
