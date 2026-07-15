@@ -137,12 +137,15 @@ export function EtcStandardCells({ job }: { job: StandardJobBase }) {
 
   return (
     <>
+      {/* Heavy gray dividers between each Standard block, matching the sheet:
+          [Total ETC · % Total] | [Standard Fees] | [Contingency] | [Total Std
+          Fees] | [Notes]. % Total stays thin (same block as Total ETC). */}
       <td className={`${cell(true)} bg-sdc-gray-50`}>{currency(std.totalEtcDollars)}</td>
       <td className={`${cell(false)} bg-sdc-gray-50`}>{percent(std.percentOfTotal)}</td>
-      <td className={`${cell(false)} bg-[#D6E4F0]/40`}>{currency(std.standardFees)}</td>
-      <td className={cell(false)}>{job.contingencyAmount ? currency(job.contingencyAmount) : "—"}</td>
-      <td className={`${cell(false)} bg-sdc-yellow-bg/60 font-medium`}>{currency(std.totalStandardFees)}</td>
-      <td className="border-l border-sdc-border px-2 py-1 text-left text-xs text-sdc-gray-500 whitespace-nowrap" title={job.notes}>
+      <td className={`${cell(true)} bg-[#D6E4F0]/40`}>{currency(std.standardFees)}</td>
+      <td className={cell(true)}>{job.contingencyAmount ? currency(job.contingencyAmount) : "—"}</td>
+      <td className={`${cell(true)} bg-sdc-yellow-bg/60 font-medium`}>{currency(std.totalStandardFees)}</td>
+      <td className={`${STD_EDGE} px-2 py-1 text-left text-xs text-sdc-gray-500 whitespace-nowrap`} title={job.notes}>
         {job.notes || "—"}
       </td>
     </>
@@ -159,12 +162,12 @@ export function StandardGrandCells() {
     <>
       <td className={`${STD_EDGE} px-2 py-1 text-right text-xs text-sdc-navy`}>{currency(grand.totalEtcDollars)}</td>
       <td className="border-l border-sdc-border px-2 py-1 text-right text-xs text-sdc-navy">{percent(grand.percentOfTotal)}</td>
-      <td className="border-l border-sdc-border px-2 py-1 text-right text-xs text-sdc-navy">{currency(grand.standardFees)}</td>
-      <td className="border-l border-sdc-border px-2 py-1 text-right text-xs text-sdc-navy">
+      <td className={`${STD_EDGE} px-2 py-1 text-right text-xs text-sdc-navy`}>{currency(grand.standardFees)}</td>
+      <td className={`${STD_EDGE} px-2 py-1 text-right text-xs text-sdc-navy`}>
         {grand.contingencyAmount ? currency(grand.contingencyAmount) : "—"}
       </td>
-      <td className="border-l border-sdc-border px-2 py-1 text-right text-xs font-semibold text-sdc-navy">{currency(grand.totalStandardFees)}</td>
-      <td className="border-l border-sdc-border px-2 py-1" />
+      <td className={`${STD_EDGE} px-2 py-1 text-right text-xs font-semibold text-sdc-navy`}>{currency(grand.totalStandardFees)}</td>
+      <td className={`${STD_EDGE} px-2 py-1`} />
     </>
   );
 }

@@ -8,6 +8,8 @@ import { EtcSectionCells } from "@/components/EtcSectionCells";
 import { StandardRatesProvider, EtcStandardCells, StandardGrandCells } from "@/components/EtcStandardColumns";
 import type { StandardJobBase, PoolTotals, StandardRates } from "@/components/EtcStandardColumns";
 import { EtcRatesButton } from "@/components/EtcRatesButton";
+import { StandardPoolPanel } from "@/components/StandardPoolPanel";
+import type { PoolPanelRow } from "@/components/StandardPoolPanel";
 import { ETC_SECTIONS, PARTS_COST_SECTION } from "@/lib/sections";
 import { calcHoursLeft, suggestNewEtc, isMonthLocked, isValidMonth, nextMonth, round2 } from "@/lib/etc";
 import { submitMonth, reopenMonth, syncPowerBiForEtc, syncEtcHistory } from "@/lib/etc-actions";
@@ -218,6 +220,31 @@ const STANDARD_LEAF_COLUMNS = [
   "Total Std Fees",
   "Notes",
 ] as const;
+
+// Category → billing group / department, in the sheet's print order — drives
+// the read-only "Standard Fees By Department" side panel.
+const POOL_PANEL_META = [
+  { category: "ENGINEERING_PM", group: "Engineering", dept: "PM" },
+  { category: "ENGINEERING_WARRANTY", group: "Engineering", dept: "Warranty" },
+  { category: "SHOP_MANUFACTURING", group: "Shop", dept: "Manufacturing" },
+  { category: "SHOP_WARRANTY", group: "Shop", dept: "Warranty" },
+] as const;
+
+// The department pools for `month`, or — if that month was never refreshed —
+// the most recent PRIOR month's pools as a labeled fallback (so Standard Fees
+// never silently collapse to $0). Mirrors the same-named helper on the
+// /standard-sheet tab, keeping the two views in lockstep on which figures show.
+async function loadEffectivePools(month: string) {
+  const own = await prisma.categoryPool.findMany({ where: { month } });
+  if (own.length > 0) return { pools: own, carriedFrom: null as string | null };
+  const prior = await prisma.categoryPool.findFirst({
+    where: { month: { lt: month } },
+    orderBy: { month: "desc" },
+    select: { month: true },
+  });
+  if (!prior) return { pools: own, carriedFrom: null as string | null };
+  return { pools: await prisma.categoryPool.findMany({ where: { month: prior.month } }), carriedFrom: prior.month };
+}
 // Marks the left edge of the whole Standard block so it reads as a distinct
 // section bolted onto the ETC grid. `!` forces these to win over TABLE_GRID's
 // blanket `[&_th]:border-l`/`[&_td]:border-l` rules, which — being a
@@ -396,13 +423,20 @@ export default async function MonthlyEtcPage({
   // Global execution rates applied to every job in this grid's Standard view —
   // set via the "ETC Rates" button, stored on the StandardSheetSetting row.
   let standardRates: StandardRates = { engrRate: 170, shopRate: 140, partsMarkup: 1.2 };
+  let poolPanelRows: PoolPanelRow[] = [];
+  let poolsCarriedFrom: string | null = null;
 
   if (showStandards) {
-    const [execEtcByJob, pools, setting] = await Promise.all([
+    const [execEtcByJob, effective, setting] = await Promise.all([
       getExecutionEtcByJob(jobs.map((j) => j.id), month),
-      prisma.categoryPool.findMany({ where: { month } }),
+      // Same carry-forward fallback the /standard-sheet tab uses, so the inline
+      // Standard fees and the pool panel never silently collapse to $0 for a
+      // month whose pools were never pulled.
+      loadEffectivePools(month),
       prisma.standardSheetSetting.findUnique({ where: { id: 1 } }),
     ]);
+    const pools = effective.pools;
+    poolsCarriedFrom = effective.carriedFrom;
     contingencyRate = setting ? Number(setting.contingencyRate) : 1.2;
     standardRates = {
       engrRate: setting ? Number(setting.engrRate) : 170,
@@ -415,6 +449,22 @@ export default async function MonthlyEtcPage({
       shopManufacturing: Number(pools.find((p) => p.category === "SHOP_MANUFACTURING")?.standardFee ?? 0),
       shopWarranty: Number(pools.find((p) => p.category === "SHOP_WARRANTY")?.standardFee ?? 0),
     };
+
+    poolPanelRows = POOL_PANEL_META.map(({ category, group, dept }) => {
+      const p = pools.find((x) => x.category === category);
+      return {
+        category,
+        group,
+        dept,
+        previousMonthPulledHours: p ? Number(p.previousMonthPulledHours) : 0,
+        newHoursAddedThisMonth: p ? Number(p.newHoursAddedThisMonth) : 0,
+        hoursAvailable: p ? Number(p.hoursAvailable) : 0,
+        hoursWorkedThisMonth: p ? Number(p.hoursWorkedThisMonth) : 0,
+        hoursPulledThisMonth: p ? Number(p.hoursPulledThisMonth) : 0,
+        newEtcHours: p ? Number(p.newEtcHours) : 0,
+        standardFee: p ? Number(p.standardFee) : 0,
+      };
+    });
 
     for (const job of jobs) {
       const etc = execEtcByJob.get(job.id) ?? { engineering: 0, shop: 0, parts: 0 };
@@ -546,7 +596,8 @@ export default async function MonthlyEtcPage({
            under the new month's numbers. Remounting per month guarantees each
            month's grid seeds fresh from its own server data. */
         <form key={month} id="etc-month-form" action={submitMonth.bind(null, month)}>
-          <div className="max-h-[calc(100vh-260px)] min-w-[480px] overflow-auto border border-sdc-border border-t-[#808080] bg-white shadow-sm select-none styled-scrollbar">
+          <div className="flex items-start gap-3">
+          <div className="max-h-[calc(100vh-260px)] min-w-0 flex-1 overflow-auto border border-sdc-border border-t-[#808080] bg-white shadow-sm select-none styled-scrollbar">
             <StandardRatesProvider
               jobs={[...standardByJob.values()]}
               rates={standardRates}
@@ -694,10 +745,12 @@ export default async function MonthlyEtcPage({
                     </th>
                   ))}
                   {showStandards &&
-                    STANDARD_LEAF_COLUMNS.map((col, i) => (
+                    STANDARD_LEAF_COLUMNS.map((col) => (
                       <th
                         key={`std-${col}`}
-                        className={`${i === 0 ? STD_EDGE : "border-l border-sdc-border"} bg-[#D6E4F0]/60 px-1 py-1.5 text-right text-[10px] text-sdc-blue-dark`}
+                        // Heavy divider before each Standard block; "% Total"
+                        // stays thin as it shares the Total ETC block.
+                        className={`${col === "% Total" ? "border-l border-sdc-border" : STD_EDGE} bg-[#D6E4F0]/60 px-1 py-1.5 text-right text-[10px] text-sdc-blue-dark`}
                       >
                         {col}
                       </th>
@@ -968,7 +1021,10 @@ export default async function MonthlyEtcPage({
             </table>
             </StandardRatesProvider>
           </div>
-
+          {showStandards && (
+            <StandardPoolPanel month={month} carriedFrom={poolsCarriedFrom} rows={poolPanelRows} />
+          )}
+          </div>
         </form>
       )}
     </div>
