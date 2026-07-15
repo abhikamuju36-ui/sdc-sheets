@@ -13,17 +13,20 @@ export function EtcRatesButton({
   engrRate,
   shopRate,
   partsMarkup,
+  contingencyRate,
   disabled,
 }: {
   engrRate: number;
   shopRate: number;
   partsMarkup: number;
+  contingencyRate: number;
   disabled: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [engr, setEngr] = useState(String(engrRate));
   const [shop, setShop] = useState(String(shopRate));
   const [parts, setParts] = useState(String(partsMarkup));
+  const [conting, setConting] = useState(String(contingencyRate));
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -36,9 +39,10 @@ export function EtcRatesButton({
     setEngr(String(engrRate));
     setShop(String(shopRate));
     setParts(String(partsMarkup));
+    setConting(String(contingencyRate));
     setError(null);
     setOpen(true);
-  }, [engrRate, shopRate, partsMarkup]);
+  }, [engrRate, shopRate, partsMarkup, contingencyRate]);
 
   // Close on outside click / Escape, like a normal popover.
   useEffect(() => {
@@ -61,14 +65,15 @@ export function EtcRatesButton({
     const e = Number(engr);
     const s = Number(shop);
     const p = Number(parts);
-    if (![e, s, p].every((n) => Number.isFinite(n) && n >= 0)) {
+    const c = Number(conting);
+    if (![e, s, p, c].every((n) => Number.isFinite(n) && n >= 0)) {
       setError("Enter valid non-negative numbers.");
       return;
     }
     setError(null);
     startTransition(async () => {
       try {
-        await saveStandardRates(e, s, p);
+        await saveStandardRates(e, s, p, c);
         setOpen(false);
       } catch {
         setError("Could not save — try again.");
@@ -98,6 +103,10 @@ export function EtcRatesButton({
             <label className="flex items-center justify-between gap-2 text-sm text-sdc-navy">
               <span>Parts markup</span>
               <input type="number" step="0.01" min="0" value={parts} onChange={(e) => setParts(e.target.value)} disabled={disabled || pending} className={field} aria-label="Parts markup" />
+            </label>
+            <label className="flex items-center justify-between gap-2 border-t border-sdc-border pt-2 text-sm text-sdc-navy">
+              <span>Contingency rate</span>
+              <input type="number" step="0.01" min="0" value={conting} onChange={(e) => setConting(e.target.value)} disabled={disabled || pending} className={field} aria-label="Contingency rate" />
             </label>
           </div>
           {disabled && (

@@ -170,17 +170,6 @@ const GROUPS: NavGroup[] = [
           </Icon>
         ),
       },
-      {
-        href: "/standard-sheet",
-        label: "Standard Sheet",
-        isActive: (p) => p.startsWith("/standard-sheet"),
-        icon: (
-          <Icon>
-            <rect x="3" y="1.5" width="10" height="13" rx="1.5" />
-            <path d="M6 6.5 L7.3 7.8 L10 5" strokeLinecap="round" strokeLinejoin="round" />
-          </Icon>
-        ),
-      },
     ],
   },
 ];

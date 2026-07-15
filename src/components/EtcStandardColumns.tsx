@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useMemo } from "react";
+import { createContext, useContext, useMemo, useRef, useState } from "react";
 import {
   calcTotalEtcDollars,
   calcPercentOfTotal,
@@ -8,6 +8,7 @@ import {
   calcStandardFeeShop,
   calcTotalStandardFees,
 } from "@/lib/standard-fees";
+import { saveContingencyAmount, saveJobNotes } from "@/lib/standard-sheet-actions";
 
 // Same weight/treatment as the Monthly ETC grid's other block dividers.
 const STD_EDGE = "border-l-[33px]! border-l-[#808080]!";
@@ -38,6 +39,12 @@ type StandardComputed = {
   totalStandardFees: number;
 };
 
+// Frozen snapshot values for a submitted month — a plain array (serializable
+// across the RSC boundary) the provider indexes by jobId. When present, the
+// grid renders these instead of the live rate/pool math, so a later global-rate
+// or pool edit can never mutate a locked month's numbers.
+export type FrozenStandardRow = StandardComputed & { jobId: number };
+
 type StandardGrandTotals = {
   totalEtcDollars: number;
   percentOfTotal: number;
@@ -49,6 +56,7 @@ type StandardGrandTotals = {
 type Ctx = {
   getComputed: (jobId: number) => StandardComputed | undefined;
   getGrandTotals: () => StandardGrandTotals;
+  editable: boolean;
 };
 
 const StandardRatesCtx = createContext<Ctx | null>(null);
@@ -64,15 +72,25 @@ export function StandardRatesProvider({
   rates,
   poolTotals,
   contingencyRate,
+  frozenRows,
+  editable = false,
   children,
 }: {
   jobs: StandardJobBase[];
   rates: StandardRates;
   poolTotals: PoolTotals;
   contingencyRate: number;
+  frozenRows?: FrozenStandardRow[];
+  editable?: boolean;
   children: React.ReactNode;
 }) {
   const computedByJob = useMemo(() => {
+    // Submitted month: render exactly the frozen snapshot rows.
+    if (frozenRows) {
+      const m = new Map<number, StandardComputed>();
+      for (const r of frozenRows) m.set(r.jobId, { totalEtcDollars: r.totalEtcDollars, percentOfTotal: r.percentOfTotal, standardFees: r.standardFees, totalStandardFees: r.totalStandardFees });
+      return m;
+    }
     const withTotals = jobs.map((j) => {
       const totalEtcDollars = calcTotalEtcDollars({ engineering: j.etcEngineering, shop: j.etcShop, parts: j.etcParts }, rates);
       return { ...j, totalEtcDollars };
@@ -98,7 +116,7 @@ export function StandardRatesProvider({
       });
     }
     return map;
-  }, [jobs, rates, poolTotals, contingencyRate]);
+  }, [jobs, rates, poolTotals, contingencyRate, frozenRows]);
 
   const grandTotals = useMemo<StandardGrandTotals>(() => {
     const acc = { totalEtcDollars: 0, percentOfTotal: 0, standardFees: 0, contingencyAmount: 0, totalStandardFees: 0 };
@@ -114,7 +132,7 @@ export function StandardRatesProvider({
     return acc;
   }, [jobs, computedByJob]);
 
-  const ctx: Ctx = { getComputed: (jobId) => computedByJob.get(jobId), getGrandTotals: () => grandTotals };
+  const ctx: Ctx = { getComputed: (jobId) => computedByJob.get(jobId), getGrandTotals: () => grandTotals, editable };
   return <StandardRatesCtx.Provider value={ctx}>{children}</StandardRatesCtx.Provider>;
 }
 
@@ -129,7 +147,7 @@ function useStandardRates(): Ctx {
 // ETC Rates). The per-job ENGR/Shop/Parts rate columns were removed; those
 // rates are now set once via the "ETC Rates" toolbar button.
 export function EtcStandardCells({ job }: { job: StandardJobBase }) {
-  const { getComputed } = useStandardRates();
+  const { getComputed, editable } = useStandardRates();
   const std = getComputed(job.jobId);
   if (!std) return null;
 
@@ -143,12 +161,72 @@ export function EtcStandardCells({ job }: { job: StandardJobBase }) {
       <td className={`${cell(true)} bg-sdc-gray-50`}>{currency(std.totalEtcDollars)}</td>
       <td className={`${cell(false)} bg-sdc-gray-50`}>{percent(std.percentOfTotal)}</td>
       <td className={`${cell(true)} bg-[#D6E4F0]/40`}>{currency(std.standardFees)}</td>
-      <td className={cell(true)}>{job.contingencyAmount ? currency(job.contingencyAmount) : "—"}</td>
+      <td className={cell(true)}>
+        <ContingencyNotesInputs jobId={job.jobId} field="contingency" jobName={job.jobName} contingency={job.contingencyAmount} notes={job.notes} editable={editable} />
+      </td>
       <td className={`${cell(true)} bg-sdc-yellow-bg/60 font-medium`}>{currency(std.totalStandardFees)}</td>
       <td className={`${STD_EDGE} px-2 py-1 text-left text-xs text-sdc-gray-500 whitespace-nowrap`} title={job.notes}>
-        {job.notes || "—"}
+        <ContingencyNotesInputs jobId={job.jobId} field="notes" jobName={job.jobName} contingency={job.contingencyAmount} notes={job.notes} editable={editable} />
       </td>
     </>
+  );
+}
+
+// Contingency $ and Notes are the sheet's two per-job manual columns. Each is a
+// single-field autosave input (on blur) when the month is unlocked; read-only
+// text otherwise.
+function ContingencyNotesInputs({
+  jobId,
+  field,
+  jobName,
+  contingency,
+  notes,
+  editable,
+}: {
+  jobId: number;
+  field: "contingency" | "notes";
+  jobName: string;
+  contingency: number;
+  notes: string;
+  editable: boolean;
+}) {
+  const initial = field === "contingency" ? (contingency ? String(contingency) : "") : notes;
+  const [value, setValue] = useState(initial);
+  const lastSaved = useRef(initial);
+
+  async function save() {
+    if (value === lastSaved.current) return;
+    try {
+      if (field === "contingency") {
+        const parsed = value.trim() === "" ? 0 : Number(value);
+        if (!Number.isFinite(parsed) || parsed < 0) return;
+        await saveContingencyAmount(jobId, parsed);
+      } else {
+        await saveJobNotes(jobId, value);
+      }
+      lastSaved.current = value;
+    } catch {
+      // Best-effort autosave; typed value stays and retries on next blur.
+    }
+  }
+
+  if (!editable) {
+    if (field === "contingency") return <>{contingency ? currency(contingency) : "—"}</>;
+    return <>{notes || "—"}</>;
+  }
+
+  return (
+    <input
+      type={field === "contingency" ? "number" : "text"}
+      step={field === "contingency" ? "1" : undefined}
+      min={field === "contingency" ? "0" : undefined}
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={save}
+      aria-label={`${field === "contingency" ? "Contingency amount" : "Notes"}, ${jobName}`}
+      placeholder="—"
+      className={`${field === "contingency" ? "w-20 text-right" : "w-28 text-left"} border-none bg-transparent text-xs outline-none focus:bg-white`}
+    />
   );
 }
 

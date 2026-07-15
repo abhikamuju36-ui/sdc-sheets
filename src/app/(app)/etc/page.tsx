@@ -6,10 +6,16 @@ import { getEtcMonthJobWhere } from "@/lib/etc-month-jobs";
 import { EtcDraftInput } from "@/components/EtcDraftInput";
 import { EtcSectionCells } from "@/components/EtcSectionCells";
 import { StandardRatesProvider, EtcStandardCells, StandardGrandCells } from "@/components/EtcStandardColumns";
-import type { StandardJobBase, PoolTotals, StandardRates } from "@/components/EtcStandardColumns";
+import type { StandardJobBase, PoolTotals, StandardRates, FrozenStandardRow } from "@/components/EtcStandardColumns";
 import { EtcRatesButton } from "@/components/EtcRatesButton";
 import { StandardPoolPanel } from "@/components/StandardPoolPanel";
 import type { PoolPanelRow } from "@/components/StandardPoolPanel";
+import {
+  refreshPools,
+  savePools,
+  submitStandardSheetMonth,
+  reopenStandardSheetMonth,
+} from "@/lib/standard-sheet-actions";
 import { ETC_SECTIONS, PARTS_COST_SECTION } from "@/lib/sections";
 import { calcHoursLeft, suggestNewEtc, isMonthLocked, isValidMonth, nextMonth, round2 } from "@/lib/etc";
 import { submitMonth, reopenMonth, syncPowerBiForEtc, syncEtcHistory } from "@/lib/etc-actions";
@@ -425,6 +431,9 @@ export default async function MonthlyEtcPage({
   let standardRates: StandardRates = { engrRate: 170, shopRate: 140, partsMarkup: 1.2 };
   let poolPanelRows: PoolPanelRow[] = [];
   let poolsCarriedFrom: string | null = null;
+  // Frozen snapshot rows for a submitted month — the grid renders these instead
+  // of live math so a later rate/pool edit can't mutate a locked month.
+  let frozenStandardRows: FrozenStandardRow[] | undefined;
 
   if (showStandards) {
     const [execEtcByJob, effective, setting] = await Promise.all([
@@ -461,22 +470,49 @@ export default async function MonthlyEtcPage({
         hoursAvailable: p ? Number(p.hoursAvailable) : 0,
         hoursWorkedThisMonth: p ? Number(p.hoursWorkedThisMonth) : 0,
         hoursPulledThisMonth: p ? Number(p.hoursPulledThisMonth) : 0,
+        rate: p ? Number(p.rate) : 0,
         newEtcHours: p ? Number(p.newEtcHours) : 0,
         standardFee: p ? Number(p.standardFee) : 0,
+        hasData: !!p,
       };
     });
 
-    for (const job of jobs) {
-      const etc = execEtcByJob.get(job.id) ?? { engineering: 0, shop: 0, parts: 0 };
-      standardByJob.set(job.id, {
-        jobId: job.id,
-        jobName: job.jobName,
-        etcEngineering: etc.engineering,
-        etcShop: etc.shop,
-        etcParts: etc.parts,
-        contingencyAmount: job.executionRate ? Number(job.executionRate.contingencyAmount) : 0,
-        notes: job.executionRate?.notes ?? "",
-      });
+    if (standardSheetSubmitted) {
+      // Frozen month: render exactly the snapshot rows (contingency/notes and
+      // every derived figure come from the freeze, immune to later edits).
+      const snapshots = await prisma.standardSheetSnapshot.findMany({ where: { month } });
+      frozenStandardRows = [];
+      for (const s of snapshots) {
+        standardByJob.set(s.jobId, {
+          jobId: s.jobId,
+          jobName: jobs.find((j) => j.id === s.jobId)?.jobName ?? "",
+          etcEngineering: Number(s.etcEngineering),
+          etcShop: Number(s.etcShop),
+          etcParts: Number(s.etcParts),
+          contingencyAmount: Number(s.contingencyAmount),
+          notes: s.notes ?? "",
+        });
+        frozenStandardRows.push({
+          jobId: s.jobId,
+          totalEtcDollars: Number(s.totalEtcDollars),
+          percentOfTotal: Number(s.percentOfTotal),
+          standardFees: Number(s.standardFeeEngineering) + Number(s.standardFeeShop),
+          totalStandardFees: Number(s.totalStandardFees),
+        });
+      }
+    } else {
+      for (const job of jobs) {
+        const etc = execEtcByJob.get(job.id) ?? { engineering: 0, shop: 0, parts: 0 };
+        standardByJob.set(job.id, {
+          jobId: job.id,
+          jobName: job.jobName,
+          etcEngineering: etc.engineering,
+          etcShop: etc.shop,
+          etcParts: etc.parts,
+          contingencyAmount: job.executionRate ? Number(job.executionRate.contingencyAmount) : 0,
+          notes: job.executionRate?.notes ?? "",
+        });
+      }
     }
   }
 
@@ -548,6 +584,7 @@ export default async function MonthlyEtcPage({
               engrRate={standardRates.engrRate}
               shopRate={standardRates.shopRate}
               partsMarkup={standardRates.partsMarkup}
+              contingencyRate={contingencyRate}
               disabled={standardSheetSubmitted}
             />
           </>
@@ -595,14 +632,18 @@ export default async function MonthlyEtcPage({
            rate inputs) keeps the PREVIOUS month's typed state and renders it
            under the new month's numbers. Remounting per month guarantees each
            month's grid seeds fresh from its own server data. */
-        <form key={month} id="etc-month-form" action={submitMonth.bind(null, month)}>
-          <div className="flex items-start gap-3">
-          <div className="max-h-[calc(100vh-260px)] min-w-0 flex-1 overflow-auto border border-sdc-border border-t-[#808080] bg-white shadow-sm select-none styled-scrollbar">
+        <div className="flex items-start gap-3">
+          {/* The ETC month form wraps ONLY the grid — the pool panel has its own
+              Save/Refresh/Submit forms and must not be nested inside it. */}
+          <form key={month} id="etc-month-form" action={submitMonth.bind(null, month)} className="min-w-0 flex-1">
+          <div className="max-h-[calc(100vh-260px)] overflow-auto border border-sdc-border border-t-[#808080] bg-white shadow-sm select-none styled-scrollbar">
             <StandardRatesProvider
               jobs={[...standardByJob.values()]}
               rates={standardRates}
               poolTotals={poolTotals}
               contingencyRate={contingencyRate}
+              frozenRows={frozenStandardRows}
+              editable={showStandards && !standardSheetSubmitted}
             >
             <table className={`w-full text-sm ${TABLE_GRID}`}>
               <thead className="sticky top-0 z-20 bg-sdc-gray-100">
@@ -1021,11 +1062,22 @@ export default async function MonthlyEtcPage({
             </table>
             </StandardRatesProvider>
           </div>
+          </form>
           {showStandards && (
-            <StandardPoolPanel month={month} carriedFrom={poolsCarriedFrom} rows={poolPanelRows} />
+            <StandardPoolPanel
+              month={month}
+              carriedFrom={poolsCarriedFrom}
+              rows={poolPanelRows}
+              isSubmitted={standardSheetSubmitted}
+              isAdmin={role === "ADMIN"}
+              poolsEditable={!standardSheetSubmitted && !poolsCarriedFrom}
+              savePoolsAction={savePools.bind(null, month)}
+              refreshPoolsAction={refreshPools.bind(null, month)}
+              submitMonthAction={submitStandardSheetMonth.bind(null, month)}
+              reopenMonthAction={reopenStandardSheetMonth.bind(null, month)}
+            />
           )}
-          </div>
-        </form>
+        </div>
       )}
     </div>
   );
