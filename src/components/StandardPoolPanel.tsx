@@ -8,11 +8,12 @@
 //
 // Excel parity: "Hours being pulled" (D76…) and "Rate" (D78…) are manual cells;
 // "New ETC Hours" (=Available−Pulled, D77) and "Standard Fee" (=New ETC×Rate,
-// D79) are formulas that recompute the instant either manual cell changes. So
-// those two derived rows update live client-side here, before Save.
+// D79) are formulas. The pulled/rate cells live in StandardRatesProvider, so
+// editing them here recomputes this block AND every job row's Standard Fee on
+// the grid live — the sheet's cross-linked formulas.
 
-import { useState } from "react";
 import { BUTTON_PRIMARY, BUTTON_SECONDARY } from "@/components/ui/classnames";
+import { useStandardPoolCell } from "@/components/EtcStandardColumns";
 
 export type PoolPanelRow = {
   category: string;
@@ -44,6 +45,7 @@ const GROUP_TINT: Record<string, string> = {
   Engineering: "bg-[#DCE6F1]",
   Shop: "bg-[#F2DDD3]",
 };
+const INPUT = "w-20 rounded border border-sdc-border px-1.5 py-0.5 text-right text-xs outline-none focus:border-sdc-blue";
 
 export function StandardPoolPanel({
   month,
@@ -69,17 +71,6 @@ export function StandardPoolPanel({
   reopenMonthAction: () => Promise<void>;
 }) {
   const groups = [...new Set(rows.map((r) => r.group))];
-  // Live copies of the two manual cells (Excel D76/D78). Seeded once from the
-  // server pool data; the derived rows below read from these so New ETC Hours
-  // and Standard Fee recompute as you type, exactly like the sheet's formulas.
-  const [pulled, setPulled] = useState<Record<string, string>>(() =>
-    Object.fromEntries(rows.map((r) => [r.category, String(r.hoursPulledThisMonth)]))
-  );
-  const [rate, setRate] = useState<Record<string, string>>(() =>
-    Object.fromEntries(rows.map((r) => [r.category, String(r.rate)]))
-  );
-
-  const input = "w-20 rounded border border-sdc-border px-1.5 py-0.5 text-right text-xs outline-none focus:border-sdc-blue";
 
   return (
     <aside className="w-[320px] shrink-0 self-start overflow-hidden border border-sdc-border border-t-[#808080] bg-white shadow-sm">
@@ -114,64 +105,9 @@ export function StandardPoolPanel({
                 </div>
                 {rows
                   .filter((r) => r.group === group)
-                  .map((r) => {
-                    // Excel D77 / D79 — recomputed live from the manual cells.
-                    const pulledVal = num(pulled[r.category] ?? String(r.hoursPulledThisMonth));
-                    const rateVal = num(rate[r.category] ?? String(r.rate));
-                    const newEtcHours = r.hoursAvailable - pulledVal;
-                    const standardFee = newEtcHours * rateVal;
-                    return (
-                      <div key={r.category} className="border-b border-sdc-border px-3 py-2">
-                        <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-sdc-gray-500">{r.dept}</p>
-                        <dl className="space-y-0.5 text-xs">
-                          <Line label="Previous Month Pulled Hours" value={whole(r.previousMonthPulledHours)} />
-                          <Line label="New Hours Added this Month" value={whole(r.newHoursAddedThisMonth)} />
-                          <Line label="Hours Available" value={whole(r.hoursAvailable)} />
-                          <Line label="Hours Worked this Month" value={whole(r.hoursWorkedThisMonth)} />
-                          <div className="flex items-center justify-between gap-2 rounded bg-sdc-yellow-bg/60 px-1">
-                            <dt className="text-sdc-gray-600">Hours being pulled this month</dt>
-                            <dd>
-                              {poolsEditable && r.hasData ? (
-                                <input
-                                  type="number"
-                                  step="1"
-                                  min="0"
-                                  name={`pulled__${r.category}`}
-                                  value={pulled[r.category] ?? ""}
-                                  onChange={(e) => setPulled((p) => ({ ...p, [r.category]: e.target.value }))}
-                                  className={input}
-                                  aria-label={`Hours pulled, ${r.dept}`}
-                                />
-                              ) : (
-                                <span className="tabular-nums text-sdc-gray-700">{whole(pulledVal)}</span>
-                              )}
-                            </dd>
-                          </div>
-                          <div className="flex items-center justify-between gap-2 rounded px-1">
-                            <dt className="text-sdc-gray-600">Rate</dt>
-                            <dd>
-                              {poolsEditable && r.hasData ? (
-                                <input
-                                  type="number"
-                                  step="0.01"
-                                  min="0"
-                                  name={`rate__${r.category}`}
-                                  value={rate[r.category] ?? ""}
-                                  onChange={(e) => setRate((p) => ({ ...p, [r.category]: e.target.value }))}
-                                  className={input}
-                                  aria-label={`Rate, ${r.dept}`}
-                                />
-                              ) : (
-                                <span className="tabular-nums text-sdc-gray-700">{rateVal}</span>
-                              )}
-                            </dd>
-                          </div>
-                          <Line label="New ETC Hours" value={whole(newEtcHours)} />
-                          <Line label="Standard Fee" value={currency(standardFee)} strong />
-                        </dl>
-                      </div>
-                    );
-                  })}
+                  .map((r) => (
+                    <PoolDeptRow key={r.category} row={r} poolsEditable={poolsEditable} />
+                  ))}
               </div>
             ))}
           </div>
@@ -180,7 +116,7 @@ export function StandardPoolPanel({
               <button type="submit" className="w-full rounded-md border border-sdc-border bg-white px-3 py-1.5 text-xs font-semibold text-sdc-navy hover:bg-sdc-blue-light">
                 Save Pool Cells
               </button>
-              <p className="mt-1 text-center text-[10px] text-sdc-gray-400">Job Standard Fees on the grid update after Save.</p>
+              <p className="mt-1 text-center text-[10px] text-sdc-gray-400">Grid Standard Fees update live; Save persists them.</p>
             </div>
           )}
         </form>
@@ -205,6 +141,53 @@ export function StandardPoolPanel({
         )}
       </div>
     </aside>
+  );
+}
+
+// One department block. Reads/writes the live pulled/rate cell from the shared
+// provider so New ETC Hours, Standard Fee, and the grid's job fees all move
+// together as you type.
+function PoolDeptRow({ row, poolsEditable }: { row: PoolPanelRow; poolsEditable: boolean }) {
+  const cell = useStandardPoolCell(row.category);
+  const editable = poolsEditable && row.hasData && !!cell;
+
+  const pulledStr = cell?.pulled ?? String(row.hoursPulledThisMonth);
+  const rateStr = cell?.rate ?? String(row.rate);
+  const newEtcHours = cell?.newEtcHours ?? row.newEtcHours;
+  const standardFee = cell?.standardFee ?? row.standardFee;
+
+  return (
+    <div className="border-b border-sdc-border px-3 py-2">
+      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-sdc-gray-500">{row.dept}</p>
+      <dl className="space-y-0.5 text-xs">
+        <Line label="Previous Month Pulled Hours" value={whole(row.previousMonthPulledHours)} />
+        <Line label="New Hours Added this Month" value={whole(row.newHoursAddedThisMonth)} />
+        <Line label="Hours Available" value={whole(row.hoursAvailable)} />
+        <Line label="Hours Worked this Month" value={whole(row.hoursWorkedThisMonth)} />
+        <div className="flex items-center justify-between gap-2 rounded bg-sdc-yellow-bg/60 px-1">
+          <dt className="text-sdc-gray-600">Hours being pulled this month</dt>
+          <dd>
+            {editable ? (
+              <input type="number" step="1" min="0" name={`pulled__${row.category}`} value={pulledStr} onChange={(e) => cell!.setPulled(e.target.value)} className={INPUT} aria-label={`Hours pulled, ${row.dept}`} />
+            ) : (
+              <span className="tabular-nums text-sdc-gray-700">{whole(num(pulledStr))}</span>
+            )}
+          </dd>
+        </div>
+        <div className="flex items-center justify-between gap-2 rounded px-1">
+          <dt className="text-sdc-gray-600">Rate</dt>
+          <dd>
+            {editable ? (
+              <input type="number" step="0.01" min="0" name={`rate__${row.category}`} value={rateStr} onChange={(e) => cell!.setRate(e.target.value)} className={INPUT} aria-label={`Rate, ${row.dept}`} />
+            ) : (
+              <span className="tabular-nums text-sdc-gray-700">{num(rateStr)}</span>
+            )}
+          </dd>
+        </div>
+        <Line label="New ETC Hours" value={whole(newEtcHours)} />
+        <Line label="Standard Fee" value={currency(standardFee)} strong />
+      </dl>
+    </div>
   );
 }
 

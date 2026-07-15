@@ -19,7 +19,17 @@ function currency(n: number): string {
 function percent(n: number): string {
   return (n * 100).toLocaleString(undefined, { maximumFractionDigits: 2 }) + "%";
 }
+function num(s: string): number {
+  const n = Number(s);
+  return Number.isFinite(n) ? n : 0;
+}
 export type StandardRates = { engrRate: number; shopRate: number; partsMarkup: number };
+
+// One department pool's inputs — the two manual cells (pulled/rate) plus the
+// fixed Hours Available they derive against. The provider owns pulled/rate as
+// live state so editing them in the pool panel recomputes every job's Standard
+// Fee on the grid instantly (Excel's cross-linked D77/D79 → job-row formulas).
+export type PoolRowInput = { category: string; hoursAvailable: number; hoursPulled: number; rate: number };
 
 export type StandardJobBase = {
   jobId: number;
@@ -53,10 +63,22 @@ type StandardGrandTotals = {
   totalStandardFees: number;
 };
 
+// Live per-category pool cell, exposed to the pool panel so it renders and
+// edits the same state that drives the grid's job Standard Fees.
+export type LivePoolCell = {
+  pulled: string;
+  rate: string;
+  newEtcHours: number;
+  standardFee: number;
+  setPulled: (v: string) => void;
+  setRate: (v: string) => void;
+};
+
 type Ctx = {
   getComputed: (jobId: number) => StandardComputed | undefined;
   getGrandTotals: () => StandardGrandTotals;
   editable: boolean;
+  getPoolCell: (category: string) => LivePoolCell | undefined;
 };
 
 const StandardRatesCtx = createContext<Ctx | null>(null);
@@ -70,7 +92,7 @@ const StandardRatesCtx = createContext<Ctx | null>(null);
 export function StandardRatesProvider({
   jobs,
   rates,
-  poolTotals,
+  poolRows,
   contingencyRate,
   frozenRows,
   editable = false,
@@ -78,12 +100,39 @@ export function StandardRatesProvider({
 }: {
   jobs: StandardJobBase[];
   rates: StandardRates;
-  poolTotals: PoolTotals;
+  poolRows: PoolRowInput[];
   contingencyRate: number;
   frozenRows?: FrozenStandardRow[];
   editable?: boolean;
   children: React.ReactNode;
 }) {
+  // The two manual pool cells live here (seeded once from server data) so the
+  // pool panel and the grid's job Standard Fees read the same live values.
+  const [pulled, setPulledState] = useState<Record<string, string>>(() =>
+    Object.fromEntries(poolRows.map((p) => [p.category, String(p.hoursPulled)]))
+  );
+  const [rate, setRateState] = useState<Record<string, string>>(() =>
+    Object.fromEntries(poolRows.map((p) => [p.category, String(p.rate)]))
+  );
+
+  // Standard Fee per category = (Hours Available − Pulled) × Rate (Excel D77/D79),
+  // recomputed live — this is the % Total → job Standard Fee driver.
+  const poolTotals = useMemo<PoolTotals>(() => {
+    const fee = (category: string) => {
+      const p = poolRows.find((x) => x.category === category);
+      if (!p) return 0;
+      const pulledVal = num(pulled[category] ?? String(p.hoursPulled));
+      const rateVal = num(rate[category] ?? String(p.rate));
+      return (p.hoursAvailable - pulledVal) * rateVal;
+    };
+    return {
+      engineeringPM: fee("ENGINEERING_PM"),
+      engineeringWarranty: fee("ENGINEERING_WARRANTY"),
+      shopManufacturing: fee("SHOP_MANUFACTURING"),
+      shopWarranty: fee("SHOP_WARRANTY"),
+    };
+  }, [poolRows, pulled, rate]);
+
   const computedByJob = useMemo(() => {
     // Submitted month: render exactly the frozen snapshot rows.
     if (frozenRows) {
@@ -132,8 +181,31 @@ export function StandardRatesProvider({
     return acc;
   }, [jobs, computedByJob]);
 
-  const ctx: Ctx = { getComputed: (jobId) => computedByJob.get(jobId), getGrandTotals: () => grandTotals, editable };
+  function getPoolCell(category: string): LivePoolCell | undefined {
+    const p = poolRows.find((x) => x.category === category);
+    if (!p) return undefined;
+    const pulledStr = pulled[category] ?? String(p.hoursPulled);
+    const rateStr = rate[category] ?? String(p.rate);
+    const newEtcHours = p.hoursAvailable - num(pulledStr);
+    return {
+      pulled: pulledStr,
+      rate: rateStr,
+      newEtcHours,
+      standardFee: newEtcHours * num(rateStr),
+      setPulled: (v: string) => setPulledState((prev) => ({ ...prev, [category]: v })),
+      setRate: (v: string) => setRateState((prev) => ({ ...prev, [category]: v })),
+    };
+  }
+
+  const ctx: Ctx = { getComputed: (jobId) => computedByJob.get(jobId), getGrandTotals: () => grandTotals, editable, getPoolCell };
   return <StandardRatesCtx.Provider value={ctx}>{children}</StandardRatesCtx.Provider>;
+}
+
+// Consumed by the pool panel to read/write the live pulled/rate cells.
+export function useStandardPoolCell(category: string): LivePoolCell | undefined {
+  const ctx = useContext(StandardRatesCtx);
+  if (!ctx) throw new Error("useStandardPoolCell must be used inside a StandardRatesProvider");
+  return ctx.getPoolCell(category);
 }
 
 function useStandardRates(): Ctx {

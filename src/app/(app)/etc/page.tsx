@@ -6,7 +6,7 @@ import { getEtcMonthJobWhere } from "@/lib/etc-month-jobs";
 import { EtcDraftInput } from "@/components/EtcDraftInput";
 import { EtcSectionCells } from "@/components/EtcSectionCells";
 import { StandardRatesProvider, EtcStandardCells, StandardGrandCells } from "@/components/EtcStandardColumns";
-import type { StandardJobBase, PoolTotals, StandardRates, FrozenStandardRow } from "@/components/EtcStandardColumns";
+import type { StandardJobBase, StandardRates, FrozenStandardRow, PoolRowInput } from "@/components/EtcStandardColumns";
 import { EtcRatesButton } from "@/components/EtcRatesButton";
 import { StandardPoolPanel } from "@/components/StandardPoolPanel";
 import type { PoolPanelRow } from "@/components/StandardPoolPanel";
@@ -424,7 +424,8 @@ export default async function MonthlyEtcPage({
   // Fees are all cross-linked (a rate edit shifts every job's % Total) and
   // computed live client-side by StandardRatesProvider/EtcStandardCells.
   const standardByJob = new Map<number, StandardJobBase>();
-  let poolTotals: PoolTotals = { engineeringPM: 0, engineeringWarranty: 0, shopManufacturing: 0, shopWarranty: 0 };
+  // Per-category pool inputs the provider derives live poolTotals from.
+  let poolRowsForProvider: PoolRowInput[] = [];
   let contingencyRate = 1.2;
   // Global execution rates applied to every job in this grid's Standard view —
   // set via the "ETC Rates" button, stored on the StandardSheetSetting row.
@@ -452,12 +453,15 @@ export default async function MonthlyEtcPage({
       shopRate: setting ? Number(setting.shopRate) : 140,
       partsMarkup: setting ? Number(setting.partsMarkup) : 1.2,
     };
-    poolTotals = {
-      engineeringPM: Number(pools.find((p) => p.category === "ENGINEERING_PM")?.standardFee ?? 0),
-      engineeringWarranty: Number(pools.find((p) => p.category === "ENGINEERING_WARRANTY")?.standardFee ?? 0),
-      shopManufacturing: Number(pools.find((p) => p.category === "SHOP_MANUFACTURING")?.standardFee ?? 0),
-      shopWarranty: Number(pools.find((p) => p.category === "SHOP_WARRANTY")?.standardFee ?? 0),
-    };
+    poolRowsForProvider = POOL_PANEL_META.map(({ category }) => {
+      const p = pools.find((x) => x.category === category);
+      return {
+        category,
+        hoursAvailable: p ? Number(p.hoursAvailable) : 0,
+        hoursPulled: p ? Number(p.hoursPulledThisMonth) : 0,
+        rate: p ? Number(p.rate) : 0,
+      };
+    });
 
     poolPanelRows = POOL_PANEL_META.map(({ category, group, dept }) => {
       const p = pools.find((x) => x.category === category);
@@ -632,19 +636,22 @@ export default async function MonthlyEtcPage({
            rate inputs) keeps the PREVIOUS month's typed state and renders it
            under the new month's numbers. Remounting per month guarantees each
            month's grid seeds fresh from its own server data. */
+        <StandardRatesProvider
+          key={month}
+          jobs={[...standardByJob.values()]}
+          rates={standardRates}
+          poolRows={poolRowsForProvider}
+          contingencyRate={contingencyRate}
+          frozenRows={frozenStandardRows}
+          editable={showStandards && !standardSheetSubmitted}
+        >
         <div className="flex items-start gap-3">
           {/* The ETC month form wraps ONLY the grid — the pool panel has its own
-              Save/Refresh/Submit forms and must not be nested inside it. */}
+              Save/Refresh/Submit forms and must not be nested inside it. The
+              provider wraps both so the panel's live pulled/rate edits flow into
+              the grid's job Standard Fees. */}
           <form key={month} id="etc-month-form" action={submitMonth.bind(null, month)} className="min-w-0 flex-1">
           <div className="max-h-[calc(100vh-260px)] overflow-auto border border-sdc-border border-t-[#808080] bg-white shadow-sm select-none styled-scrollbar">
-            <StandardRatesProvider
-              jobs={[...standardByJob.values()]}
-              rates={standardRates}
-              poolTotals={poolTotals}
-              contingencyRate={contingencyRate}
-              frozenRows={frozenStandardRows}
-              editable={showStandards && !standardSheetSubmitted}
-            >
             <table className={`w-full text-sm ${TABLE_GRID}`}>
               <thead className="sticky top-0 z-20 bg-sdc-gray-100">
                 <tr className={TABLE_HEADER_ROW}>
@@ -1060,7 +1067,6 @@ export default async function MonthlyEtcPage({
                 )}
               </tbody>
             </table>
-            </StandardRatesProvider>
           </div>
           </form>
           {showStandards && (
@@ -1078,6 +1084,7 @@ export default async function MonthlyEtcPage({
             />
           )}
         </div>
+        </StandardRatesProvider>
       )}
     </div>
   );
