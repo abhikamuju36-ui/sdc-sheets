@@ -389,3 +389,59 @@ memory files under `reopen-run-report-corruption-fix` and friends):
   treat as provisional; "Sync History" will flag it when the archive lands.
 - Cost Actual Historical stays frozen at migration values (no verified
   Power BI measure) — unchanged policy.
+
+---
+
+## 11. Standard Sheet consolidated into the Monthly ETC page (2026-07-15)
+
+The separate `/standard-sheet` tab (App 1's confidential Standard Fees view)
+was **retired** and its entire workflow folded into the Monthly ETC page's
+password-gated Standard view. Committed as `27fb135`, `60a304d`, `64f5bc3`.
+
+### Hidden entry point
+- The Standard Sheet password box no longer appears on `/etc`. It renders only
+  with a secret `?standards=1` flag, reached by **clicking the "Monthly ETC"
+  sidebar item three times** (≤1.5s window). The real security is unchanged —
+  the HMAC unlock cookie in `standard-sheet-gate.ts`; this only hides the door.
+
+### Global execution rates (was per-job)
+- The per-job ENGR/Shop/Parts rate columns were removed. Rates are now a single
+  **global** set entered via an **"ETC Rates"** toolbar button, stored on the
+  `StandardSheetSetting` singleton (migration `add_global_standard_rates` added
+  `engrRate`/`shopRate`/`partsMarkup`; `contingencyRate` already lived there and
+  joined the same popover). Applied to every job on the page.
+- **Semantic shift to confirm with Dan/Lisa:** historical per-job rate
+  exceptions (the sheet's orange overrides) are no longer applied — every job
+  freezes at the global rate.
+
+### Grid layout changes
+- Column order in the grid: **Total (New ETC) now precedes Parts Cost**.
+- The inline Standard block dropped its Eng/Shop/Parts ETC columns; it now runs
+  Total ETC · % Total | Standard Fees | Contingency | Total Std Fees | Notes,
+  with the sheet's heavy gray dividers between each block.
+
+### Standard Fees By Department panel + full workflow on /etc
+- A **side panel** next to the grid shows the department pool block, with the
+  same carry-forward fallback the old tab used (also now applied to the inline
+  fee math, so the two never disagree / collapse to $0).
+- The panel is **editable** (Hours pulled + Rate) and hosts **Refresh Pools**
+  (Power BI), **Save Pool Cells**, **Submit & Lock**, and **Reopen** (admin).
+- Per-job **Contingency $ and Notes** are editable inline (autosave, one server
+  action per field so neither clobbers the other).
+- The month **freeze** (`submitStandardSheetMonth`) now stamps the **global**
+  rates instead of per-job `ExecutionRate` rows. A **submitted month renders
+  the frozen snapshot inline** (`StandardRatesProvider` `frozenRows`), immune to
+  later rate/pool edits — the freeze-integrity guarantee the tab had.
+- All actions moved to `src/lib/standard-sheet-actions.ts` (revalidate `/etc`).
+
+### Deleted
+- `/standard-sheet` route (`page.tsx`, `layout.tsx`) and the now-dead
+  `StandardSheetLive`, `MonthSelect`, `ExecutionRateInput`, and
+  `saveExecutionRateField`. Nav tab removed from the sidebar.
+
+### Not yet done / caveats
+- **Not verified live** — the migration touches the financial freeze but the dev
+  preview can't authenticate past the external login, so the end-to-end
+  Refresh→edit→Submit→Reopen flow still needs a real user pass before trust.
+- `StandardSheetSnapshot` still carries per-row `engrRate/shopRate/partsMarkup`
+  columns; they now just hold the global value for every row.
