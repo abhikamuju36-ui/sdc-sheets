@@ -18,12 +18,12 @@ function wholeNum(n: number): string {
 }
 
 // Live client-side counterpart to a section's 4 derived cells (Hours Worked,
-// Hours Left, New ETC, Diff). These used to be plain uncontrolled inputs
-// whose derived values only came from server-rendered props, so editing
-// Hours Worked never visibly updated Hours Left/New ETC/Diff until the next
-// Submit or Sync round-trip. This mirrors the same etc.ts math client-side
-// so the row recomputes as you type; submitMonth still reads the final DOM
-// values by `name`, unchanged.
+// Hours Left, New ETC, Diff). Hours Worked Month is read-only display (it
+// auto-syncs from Power BI — see instrumentation.ts) but still rides along
+// in the form submission via a hidden input, since submitMonth reads it by
+// `name` unchanged. New ETC recomputes client-side as Hours Worked changes
+// between syncs, so Hours Left/New ETC/Diff stay in sync without waiting for
+// the next Submit or Sync round-trip.
 export function EtcSectionCells({
   entryId,
   edge,
@@ -52,7 +52,10 @@ export function EtcSectionCells({
   initialConfirmed: number | null;
   locked: boolean;
 }) {
-  const [workedText, setWorkedText] = useState(wholeNum(initialWorked));
+  // Hours Worked Month is no longer manager-editable — it auto-syncs from
+  // Power BI on the same cadence as the rest of the live sync (see
+  // instrumentation.ts), so a manual edit would just get overwritten anyway.
+  const workedText = wholeNum(initialWorked);
   const [newEtcText, setNewEtcText] = useState(
     initialDraft != null
       ? String(initialDraft)
@@ -72,19 +75,6 @@ export function EtcSectionCells({
   const newEtcNum = Number(newEtcText);
   const effective = newEtcText.trim() === "" || !Number.isFinite(newEtcNum) ? suggested : newEtcNum;
   const diff = hoursLeft - effective;
-
-  function handleWorkedChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const raw = e.target.value;
-    setWorkedText(raw);
-    // Auto-fill/clear New ETC only while the manager hasn't typed into it
-    // themselves, no draft is persisted, AND the cell was never confirmed —
-    // a confirmed value (reopened month) must survive Hours Worked edits
-    // until the manager explicitly retypes it.
-    if (!newEtcTouched && initialDraft == null && initialConfirmed == null) {
-      const nextWorked = Number(raw) || 0;
-      setNewEtcText(nextWorked === 0 ? String(round2(priorEtc)) : "");
-    }
-  }
 
   function handleNewEtcChange(e: React.ChangeEvent<HTMLInputElement>) {
     setNewEtcTouched(true);
@@ -109,21 +99,12 @@ export function EtcSectionCells({
   return (
     <>
       <td className={`${edge} bg-[#5E91D3] px-1 py-1 text-center text-[10px] text-sdc-gray-700`}>{wholeNum(priorEtc)}</td>
-      <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1 text-center`}>
-        {/* Rounded to a whole number for display — this IS what submitMonth
-            writes back, so any sub-hour precision Power BI supplied is lost
-            once a manager submits without editing this cell. */}
-        <input
-          type="number"
-          step="1"
-          min="0"
-          name={`hoursWorked__${entryId}`}
-          value={workedText}
-          onChange={handleWorkedChange}
-          disabled={locked}
-          aria-label={`Hours worked, ${jobName}, ${sectionName}`}
-          className="w-12 rounded-md border border-transparent bg-transparent px-1.5 py-1 text-center text-[10px] outline-none focus:border-sdc-blue focus:bg-white focus:shadow-sm disabled:text-sdc-gray-400"
-        />
+      <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1 text-center text-[10px] text-sdc-navy`}>
+        {/* Read-only — auto-synced from Power BI, not manager-editable. The
+            hidden input still carries the value into the form submission,
+            since submitMonth reads it by `name` unchanged. */}
+        <input type="hidden" name={`hoursWorked__${entryId}`} value={workedText} />
+        {workedText}
       </td>
       <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-1 py-1 text-center text-[10px] text-sdc-gray-500`}>
         {wholeNum(hoursLeft)}

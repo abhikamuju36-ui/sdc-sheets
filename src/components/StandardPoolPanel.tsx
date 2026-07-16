@@ -13,7 +13,7 @@
 // the grid live — the sheet's cross-linked formulas.
 
 import { BUTTON_PRIMARY, BUTTON_SECONDARY } from "@/components/ui/classnames";
-import { useStandardPoolCell } from "@/components/EtcStandardColumns";
+import { useStandardPoolCell, useStandardPoolTotals } from "@/components/EtcStandardColumns";
 
 export type PoolPanelRow = {
   category: string;
@@ -110,6 +110,7 @@ export function StandardPoolPanel({
                   ))}
               </div>
             ))}
+            <PoolTotals />
           </div>
           {poolsEditable && (
             <div className="border-t border-sdc-border px-3 py-2">
@@ -196,6 +197,32 @@ function Line({ label, value, strong }: { label: string; value: string; strong?:
     <div className="flex items-center justify-between gap-2 px-1">
       <dt className="text-sdc-gray-600">{label}</dt>
       <dd className={`tabular-nums ${strong ? "font-semibold text-sdc-navy" : "text-sdc-gray-700"}`}>{value}</dd>
+    </div>
+  );
+}
+
+// Engineering Total / Shop Total / grand total, matching the Excel sheet's
+// own rows at the bottom of the department pool block — same live per-
+// category Standard Fee math as each PoolDeptRow, just summed by group.
+function PoolTotals() {
+  const t = useStandardPoolTotals();
+  const engineeringTotal = t.engineeringPM + t.engineeringWarranty;
+  const shopTotal = t.shopManufacturing + t.shopWarranty;
+  const grandTotal = engineeringTotal + shopTotal;
+
+  return (
+    <div className="border-t border-sdc-border">
+      <div className={`${GROUP_TINT.Engineering} flex items-center justify-between gap-2 px-3 py-1.5 text-xs`}>
+        <dt className="font-semibold text-sdc-navy underline">Engineering Total</dt>
+        <dd className="font-semibold tabular-nums text-sdc-navy">{currency(engineeringTotal)}</dd>
+      </div>
+      <div className={`${GROUP_TINT.Shop} flex items-center justify-between gap-2 px-3 py-1.5 text-xs`}>
+        <dt className="font-semibold text-sdc-navy underline">Shop Total</dt>
+        <dd className="font-semibold tabular-nums text-sdc-navy">{currency(shopTotal)}</dd>
+      </div>
+      <div className="flex items-center justify-end px-3 py-2 text-xs">
+        <dd className="font-semibold tabular-nums text-sdc-blue-dark">{whole(grandTotal)}</dd>
+      </div>
     </div>
   );
 }

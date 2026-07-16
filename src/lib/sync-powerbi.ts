@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { VALID_JOB_TYPES, etcActiveJobFilter } from "@/lib/job-filters";
 import { runDax } from "@/lib/powerbi-client";
 import { ETC_TRACKED_CODES, PARTS_COST_SECTION } from "@/lib/sections";
-import { calcHoursLeft, round2 } from "@/lib/etc";
+import { calcHoursLeft, round2, isMonthLocked } from "@/lib/etc";
 
 interface HoursActualRow {
   "Job[Job Id]": string;
@@ -94,6 +94,17 @@ interface HoursWorkedBySectionRow {
 // sheet's pivot copy showed such hours, and the app must too. Prior ETC for
 // these comes from the previous month's entry if one exists, else 0.
 export async function syncHoursWorkedFromPowerBi(month: string): Promise<{ rowsUpdated: number; rowsSkipped: number }> {
+  // Re-checked here, not just trusted from the caller's earlier check — this
+  // sync does one DB round-trip per Power BI row, so it can run long enough
+  // for a manager to Submit and Lock this exact month mid-sync. A locked
+  // month is frozen history (same rule as submitMonth/clearMonth/
+  // syncPowerBiForEtc) and must never be rewritten by a background refresh.
+  const monthEntriesAtStart = await prisma.etcEntry.findMany({ where: { month }, select: { needsReview: true } });
+  const monthStartedAtStart = monthEntriesAtStart.length > 0;
+  if (monthStartedAtStart && isMonthLocked(monthEntriesAtStart)) {
+    return { rowsUpdated: 0, rowsSkipped: 0 };
+  }
+
   const [year, monthNum] = month.split("-").map(Number);
   // 'Date' isn't a groupby column here, so the month filter has to be passed
   // as a filter-table argument to SUMMARIZECOLUMNS, not applied afterward
@@ -133,11 +144,23 @@ export async function syncHoursWorkedFromPowerBi(month: string): Promise<{ rowsU
     if (!entry) {
       // Unquoted-section hours: create the entry so the work is visible, but
       // only for jobs the grid actually shows, only once the month has been
-      // started, and only when there are real hours to show.
-      const monthStarted = (await prisma.etcEntry.count({ where: { month } })) > 0;
+      // started, and only when there are real hours to show. Also refuses to
+      // add a fresh needsReview row into a month that's already fully locked
+      // — that would silently "unlock" it (isMonthLocked requires every
+      // entry to be reviewed) behind the manager's back.
       const qualifies =
         job.status === "Active" && job.completeDate === null && VALID_JOB_TYPES.includes(job.type as (typeof VALID_JOB_TYPES)[number]);
-      if (!monthStarted || !qualifies || hours === 0) {
+      if (!monthStartedAtStart || !qualifies || hours === 0) {
+        rowsSkipped++;
+        continue;
+      }
+
+      // Re-checked per-row, right before creating: monthStartedAtStart is a
+      // top-of-function snapshot, and this loop can run long enough for the
+      // month to have been fully locked since — a fresh needsReview:true row
+      // would silently "unlock" it the moment it lands.
+      const monthEntriesNow = await prisma.etcEntry.findMany({ where: { month }, select: { needsReview: true } });
+      if (isMonthLocked(monthEntriesNow)) {
         rowsSkipped++;
         continue;
       }
@@ -161,6 +184,14 @@ export async function syncHoursWorkedFromPowerBi(month: string): Promise<{ rowsU
         },
       });
       rowsUpdated++;
+      continue;
+    }
+
+    // Re-checked per-row: this specific entry could have been submitted
+    // (needsReview -> false) since the loop started, even if the month as a
+    // whole wasn't locked yet at the top-of-function check.
+    if (!entry.needsReview) {
+      rowsSkipped++;
       continue;
     }
 
@@ -205,6 +236,14 @@ interface PartCostActualRow {
 // updates existing rows) since Parts Cost has no EstimatedHours-seeded
 // counterpart from startMonth().
 export async function syncPartsCostFromPowerBi(month: string): Promise<{ rowsUpserted: number }> {
+  // Same re-check as syncHoursWorkedFromPowerBi: a locked month must never be
+  // rewritten, even if it got locked after the caller's own check but before
+  // (or during) this function's run.
+  const monthEntriesAtStart = await prisma.etcEntry.findMany({ where: { month }, select: { needsReview: true } });
+  if (monthEntriesAtStart.length > 0 && isMonthLocked(monthEntriesAtStart)) {
+    return { rowsUpserted: 0 };
+  }
+
   const [year, monthNum] = month.split("-").map(Number);
 
   const [priorRows, actualRows] = await Promise.all([
@@ -240,6 +279,22 @@ export async function syncPartsCostFromPowerBi(month: string): Promise<{ rowsUps
 
     const priorEtc = row.PriorEtcCost;
     const moneySpent = spentByJobId.get(jobId) ?? 0;
+
+    // Re-checked per-row, same reason as syncHoursWorkedFromPowerBi: this
+    // specific entry could have been submitted since the loop started. For a
+    // brand-new row (no existing entry), check the month as a whole instead
+    // — a fresh needsReview:true row would silently "unlock" an otherwise
+    // fully-locked month.
+    const existing = await prisma.etcEntry.findUnique({
+      where: { jobId_section_month: { jobId: job.id, section: PARTS_COST_SECTION, month } },
+      select: { needsReview: true },
+    });
+    if (existing) {
+      if (!existing.needsReview) continue;
+    } else {
+      const monthEntriesNow = await prisma.etcEntry.findMany({ where: { month }, select: { needsReview: true } });
+      if (isMonthLocked(monthEntriesNow)) continue;
+    }
 
     await prisma.etcEntry.upsert({
       where: { jobId_section_month: { jobId: job.id, section: PARTS_COST_SECTION, month } },
@@ -286,10 +341,25 @@ function previousMonth(month: string): string {
   const d = new Date(y, m - 2, 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
+const MONTH_NUM_TO_NAME = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+] as const;
+
+// "2026-07" -> "Jul 2026", matching 'Estimated to Complete Period'[ETC Name]'s
+// format exactly (see sync-etc-history.ts's etcNameToMonth, the inverse).
+function monthToEtcName(month: string): string {
+  const [year, monthNum] = month.split("-").map(Number);
+  return `${MONTH_NUM_TO_NAME[monthNum - 1]} ${year}`;
+}
+
 // Refreshes the company-wide "Standard Fees By Department" category pools,
-// scoped to the ETC period whose Begin Date is the requested month (the
-// sheet's pivot used the 'ETC Period Relative Index = 0' slicer — filtering
-// by Begin Date is the month-explicit equivalent, verified identical).
+// scoped to the requested month's ETC period. Filter by [ETC Name], NEVER
+// [ETC Begin Date] — confirmed live (see sync-etc-history.ts's own verified
+// mapping, and re-confirmed directly against Power BI during a 2026-07-16
+// audit: "May 2026"'s Begin Date is 2026-06-01, a full month later).
+// [ETC Begin Date] = DATE(year, month, 1) silently pulls the PREVIOUS
+// month's HoursQuoted/HoursActual and stores them mislabeled as the current
+// month — this filter used to do exactly that; fixed to match by name.
 //
 // Excel-free data flow (the workbook's Export-tab write-back loop is retired):
 // - Previous Month Pulled Hours = OUR OWN prior month's "Hours being pulled"
@@ -305,13 +375,13 @@ function previousMonth(month: string): string {
 // Derived fields mirror the sheet: Available = Prev + Added,
 // New ETC = Available - Pulled, Standard Fee = New ETC x Rate.
 export async function syncCategoryPoolsFromPowerBi(month: string): Promise<{ poolsUpserted: number }> {
-  const [year, monthNum] = month.split("-").map(Number);
+  const etcName = monthToEtcName(month);
   const dax = `
     EVALUATE
     SUMMARIZECOLUMNS(
       'Standard Fees'[Billing Group],
       'Standard Fees'[Department],
-      FILTER(ALL('Estimated to Complete Period'), 'Estimated to Complete Period'[ETC Begin Date] = DATE(${year}, ${monthNum}, 1)),
+      FILTER(ALL('Estimated to Complete Period'), 'Estimated to Complete Period'[ETC Name] = "${etcName}"),
       "PrevPulled", [Standard Fees - Monthly Process - Previous Month Pulled Hours],
       "HoursQuoted", [Standard Fees - Monthly Process - Hours Quoted by ETC Period],
       "HoursActual", [Standard Fees - Monthly Process - Hours Actual by ETC Period]

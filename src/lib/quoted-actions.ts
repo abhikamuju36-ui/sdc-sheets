@@ -59,9 +59,18 @@ async function saveHoursCells(formData: FormData) {
   });
   const existingByKey = new Map(existing.map((e) => [`${e.jobId}::${e.section}`, Number(e.quotedHours)]));
 
+  // The grid only ever displays/accepts whole numbers (see wholeHours() in
+  // page.tsx) — its <input defaultValue> is Math.round(current). Compare
+  // against the ROUNDED current value, not the raw one: otherwise an
+  // untouched cell holding a fractional Power-BI-synced value (e.g. 40.33)
+  // reads back as "changed" the moment ANY other cell on the page is saved
+  // (the whole grid is one <form>, so every hours cell resubmits its
+  // rendered value regardless of which one the manager actually edited),
+  // silently truncating its precision and permanently locking it out of
+  // future syncs via quotedHoursManuallyEdited.
   const changed = edits.filter((e) => {
     const current = existingByKey.get(`${e.jobId}::${e.section}`) ?? 0;
-    return Math.abs(current - e.quotedHours) > 0.005;
+    return Math.round(current) !== e.quotedHours;
   });
 
   if (changed.length === 0) return;
@@ -289,11 +298,21 @@ async function saveNewRows(formData: FormData) {
     const customerRaw = (fields.get("customer") ?? "").trim();
     const customer = customerRaw === "" ? null : customerRaw;
 
+    // Type is required, not just validated-if-present: the app's type-gating
+    // policy (validJobTypeFilter in job-filters.ts) excludes null-type jobs
+    // from every list/count/dashboard/export, so a job created here with no
+    // Type would be written to the DB successfully, permanently reserve its
+    // Job Id (the uniqueness check above queries unfiltered prisma.job), and
+    // then never appear anywhere in the app again — no error, just silently
+    // invisible history.
     const typeRaw = (fields.get("type") ?? "").trim();
-    if (typeRaw !== "" && !VALID_JOB_TYPES.includes(typeRaw as (typeof VALID_JOB_TYPES)[number])) {
+    if (typeRaw === "") {
+      throw new Error(`Type is required for new project "${jobId}" — select Custom, Duplicate, Hybrid, or Service.`);
+    }
+    if (!VALID_JOB_TYPES.includes(typeRaw as (typeof VALID_JOB_TYPES)[number])) {
       throw new Error(`Invalid Type "${typeRaw}" for new project "${jobId}".`);
     }
-    const type = typeRaw === "" ? null : typeRaw;
+    const type = typeRaw;
 
     const billableRaw = (fields.get("billable") ?? "Billable").trim();
     if (billableRaw !== "Billable" && billableRaw !== "Non-Billable") {

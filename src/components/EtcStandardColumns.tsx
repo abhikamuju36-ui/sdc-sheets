@@ -79,6 +79,7 @@ type Ctx = {
   getGrandTotals: () => StandardGrandTotals;
   editable: boolean;
   getPoolCell: (category: string) => LivePoolCell | undefined;
+  getPoolTotals: () => PoolTotals;
 };
 
 const StandardRatesCtx = createContext<Ctx | null>(null);
@@ -197,7 +198,13 @@ export function StandardRatesProvider({
     };
   }
 
-  const ctx: Ctx = { getComputed: (jobId) => computedByJob.get(jobId), getGrandTotals: () => grandTotals, editable, getPoolCell };
+  const ctx: Ctx = {
+    getComputed: (jobId) => computedByJob.get(jobId),
+    getGrandTotals: () => grandTotals,
+    editable,
+    getPoolCell,
+    getPoolTotals: () => poolTotals,
+  };
   return <StandardRatesCtx.Provider value={ctx}>{children}</StandardRatesCtx.Provider>;
 }
 
@@ -206,6 +213,17 @@ export function useStandardPoolCell(category: string): LivePoolCell | undefined 
   const ctx = useContext(StandardRatesCtx);
   if (!ctx) throw new Error("useStandardPoolCell must be used inside a StandardRatesProvider");
   return ctx.getPoolCell(category);
+}
+
+// Consumed by the pool panel for its Engineering/Shop/Grand Total lines —
+// same per-category Standard Fee math (Hours Available − Pulled) × Rate that
+// drives each job's fee, just summed by billing group instead of allocated
+// per job. Matches the Excel sheet's own "Engineering Total"/"Shop Total"/
+// grand-total rows at the bottom of the department pool block.
+export function useStandardPoolTotals(): PoolTotals {
+  const ctx = useContext(StandardRatesCtx);
+  if (!ctx) throw new Error("useStandardPoolTotals must be used inside a StandardRatesProvider");
+  return ctx.getPoolTotals();
 }
 
 function useStandardRates(): Ctx {

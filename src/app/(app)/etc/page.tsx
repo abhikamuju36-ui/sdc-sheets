@@ -188,11 +188,12 @@ function subColHeaderBg(col: string): string {
 }
 
 // Column-level "this is editable" marker — replaces the old per-cell dashed
-// underline, which got noisy across a grid this dense. Only "Hours Worked
-// Month" and "New ETC" are actually manager-editable (Money Spent Month is
-// Power BI's read-only actual; the Total/Standard columns are pure rollups),
-// so the pencil only appears on those column-label header cells.
-const EDITABLE_COL_LABELS = new Set(["Hours Worked Month", "New ETC"]);
+// underline, which got noisy across a grid this dense. Only "New ETC" is
+// actually manager-editable (Hours Worked Month auto-syncs from Power BI and
+// is read-only display now; Money Spent Month is likewise a read-only
+// actual; the Total/Standard columns are pure rollups), so the pencil only
+// appears on that column-label header cell.
+const EDITABLE_COL_LABELS = new Set(["New ETC"]);
 function colHeaderLabel(col: string) {
   if (!EDITABLE_COL_LABELS.has(col)) return col;
   return (
@@ -663,7 +664,7 @@ export default async function MonthlyEtcPage({
                   <th
                     rowSpan={5}
                     style={{ width: "var(--etc-job-col-width, 260px)", minWidth: "var(--etc-job-col-width, 260px)" }}
-                    className="sticky left-[120px] z-10 bg-sdc-gray-100 px-3 py-3 align-bottom"
+                    className="sticky left-[120px] z-10 border-r-2 border-black bg-sdc-gray-100 px-3 py-3 align-bottom"
                   >
                     Job Name
                     <div
@@ -853,7 +854,7 @@ export default async function MonthlyEtcPage({
                       <td className={`sticky left-10 z-10 w-20 min-w-20 px-3 py-1 text-center font-mono text-sdc-gray-400 ${zebraSticky}`}>{job.jobId}</td>
                       <td
                         style={{ width: "var(--etc-job-col-width, 260px)", minWidth: "var(--etc-job-col-width, 260px)" }}
-                        className={`sticky left-[120px] z-10 truncate px-3 py-1 text-center font-medium text-sdc-navy ${zebraSticky}`}
+                        className={`sticky left-[120px] z-10 truncate border-r-2 border-black px-3 py-1 text-center font-medium text-sdc-navy ${zebraSticky}`}
                         title={job.jobName}
                       >
                         {job.jobName}

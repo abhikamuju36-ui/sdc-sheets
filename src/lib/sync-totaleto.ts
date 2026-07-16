@@ -2,11 +2,15 @@ import sql from "mssql";
 import { prisma } from "@/lib/prisma";
 import { VALID_JOB_TYPES } from "@/lib/job-filters";
 
+// Credentials come from the environment, same as every other integration in
+// this app (Power BI, Auth, Standard Sheet password) — this was previously
+// the one exception, with a live username/password hardcoded in this file.
+// Set TOTALETO_DB_USER / TOTALETO_DB_PASSWORD in .env (gitignored).
 const config: sql.config = {
   server: "SERVER-APP1.stevendouglas.local",
   database: "SDC",
-  user: "akamuju",
-  password: "Voltages84gilds$",
+  user: process.env.TOTALETO_DB_USER,
+  password: process.env.TOTALETO_DB_PASSWORD,
   domain: "stevendouglas",
   port: 1433,
   options: { trustServerCertificate: true, encrypt: false },

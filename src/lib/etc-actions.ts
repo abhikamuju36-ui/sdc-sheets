@@ -99,15 +99,23 @@ async function seedMonth(month: string) {
   });
   const jobIds = jobs.map((j) => j.id);
 
-  const [priorEntries, existingEntries] = await Promise.all([
-    prisma.etcEntry.findMany({ where: { month: prevMonth(month), jobId: { in: jobIds } } }),
-    prisma.etcEntry.findMany({ where: { month, jobId: { in: jobIds } } }),
-  ]);
-  const priorByKey = new Map(priorEntries.map((e) => [`${e.jobId}-${e.section}`, e]));
-  const existingByKey = new Map(existingEntries.map((e) => [`${e.jobId}-${e.section}`, e]));
-
   await prisma.$transaction(
     async (tx) => {
+      // Read INSIDE the transaction, not before it — this snapshot is what
+      // decides which rows are safe to touch (existing.needsReview), so it
+      // must be as fresh as possible relative to the writes below. Reading
+      // it before the transaction started left a window where a concurrent
+      // Submit and Lock (committing between the pre-read and this write)
+      // wouldn't be reflected here, and this loop can run long enough
+      // (every active job × tracked section, up to the 20s timeout) for
+      // that window to matter.
+      const [priorEntries, existingEntries] = await Promise.all([
+        tx.etcEntry.findMany({ where: { month: prevMonth(month), jobId: { in: jobIds } } }),
+        tx.etcEntry.findMany({ where: { month, jobId: { in: jobIds } } }),
+      ]);
+      const priorByKey = new Map(priorEntries.map((e) => [`${e.jobId}-${e.section}`, e]));
+      const existingByKey = new Map(existingEntries.map((e) => [`${e.jobId}-${e.section}`, e]));
+
       for (const job of jobs) {
         for (const eh of job.estimatedHours) {
           if (!ETC_TRACKED_CODES.has(eh.section)) continue;
