@@ -20,6 +20,7 @@ import { ETC_SECTIONS, PARTS_COST_SECTION } from "@/lib/sections";
 import { calcHoursLeft, suggestNewEtc, isMonthLocked, isValidMonth, nextMonth, round2 } from "@/lib/etc";
 import { submitMonth, reopenMonth, syncPowerBiForEtc, syncEtcHistory } from "@/lib/etc-actions";
 import { RunReportButton } from "@/components/RunReportButton";
+import { SubmitAndLockButton } from "@/components/SubmitAndLockButton";
 import { isStandardSheetUnlocked, hadWrongPassword, unlockStandardSheet, lockStandardSheet } from "@/lib/standard-sheet-gate";
 import { getExecutionEtcByJob } from "@/lib/execution-etc";
 import { PageTitle } from "@/components/ui/Typography";
@@ -538,7 +539,7 @@ export default async function MonthlyEtcPage({
         {`${jobs.length} ${monthIsLocked ? "job" : "active job"}${jobs.length === 1 ? "" : "s"} — replaces the "Managers Fill Out" sheet.`}
       </p>
 
-      {/* One toolbar: pick the month/year, Run Report pulls everything from
+      {/* One toolbar: pick the month/year, Refresh Data pulls everything from
           Power BI for it, then enter/confirm and Submit and Lock. */}
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <span className="text-xs font-medium text-sdc-gray-500">Report for:</span>
@@ -551,13 +552,11 @@ export default async function MonthlyEtcPage({
         <DeptColumnFilter selected={visibleGroups} />
         {!locked && (
           <form action={syncPowerBiForEtc.bind(null, month)}>
-            <RunReportButton className={BUTTON_PRIMARY}>Run Report</RunReportButton>
+            <RunReportButton className={BUTTON_PRIMARY}>Refresh Data</RunReportButton>
           </form>
         )}
         {started && !locked && jobs.length > 0 && (
-          <button type="submit" form="etc-month-form" className={BUTTON_SECONDARY}>
-            Submit and Lock
-          </button>
+          <SubmitAndLockButton formId="etc-month-form" className={BUTTON_SECONDARY} />
         )}
         {locked && role === "ADMIN" && (
           <form action={reopenMonth.bind(null, month)}>
@@ -623,10 +622,10 @@ export default async function MonthlyEtcPage({
 
       <p className="mb-4 text-xs text-sdc-gray-400">
         {!started
-          ? `"Run Report" starts ${month}: it seeds the job rows and pulls the latest hours from Power BI, just like the sheet.`
+          ? `"Refresh Data" starts ${month}: it seeds the job rows and pulls the latest hours from Power BI, just like the sheet.`
           : locked
             ? `${month} is submitted and locked — these numbers are frozen exactly as submitted. Pick a month above to view any past submission.`
-            : `"Run Report" pulls the latest numbers from Power BI for the selected month. Enter Hours Worked, confirm or override each New ETC (suggestion shown in yellow), then Submit and Lock.`}
+            : `"Refresh Data" pulls the latest numbers from Power BI for the selected month. Enter Hours Worked, confirm or override each New ETC (suggestion shown in yellow), then Submit and Lock.`}
       </p>
 
       {started && (
@@ -762,7 +761,7 @@ export default async function MonthlyEtcPage({
                     SUB_COLUMNS.map((col, ci) => (
                       <th
                         key={`${s.code}-${col}`}
-                        className={`${ci === 0 ? edgeFor(s.code, i) : "border-l border-sdc-border"} px-1 py-1.5 text-right text-[10px] ${
+                        className={`${ci === 0 ? edgeFor(s.code, i) : "border-l border-sdc-border"} px-1 py-1.5 text-center text-[10px] ${
                           subColHeaderBg(col) || SECTION_HEADER_COLOR_LIGHT[s.code] || ""
                         }`}
                       >
@@ -774,7 +773,7 @@ export default async function MonthlyEtcPage({
                     TOTAL_SUB_COLUMNS.map((col, ci) => (
                       <th
                         key={`${group}-${col}`}
-                        className={`${ci === 0 && gi === 0 ? PHASE_EDGE : "border-l border-sdc-border"} px-1 py-1.5 text-right text-[10px] ${
+                        className={`${ci === 0 && gi === 0 ? PHASE_EDGE : "border-l border-sdc-border"} px-1 py-1.5 text-center text-[10px] ${
                           subColHeaderBg(col) || "bg-[#FDFDE3] text-sdc-navy"
                         }`}
                       >
@@ -785,7 +784,7 @@ export default async function MonthlyEtcPage({
                   {PARTS_COST_SUB_COLUMNS.map((col, i) => (
                     <th
                       key={`parts-cost-${col}`}
-                      className={`${i === 0 ? PHASE_EDGE : "border-l border-sdc-border"} px-1 py-1.5 text-right text-[10px] ${
+                      className={`${i === 0 ? PHASE_EDGE : "border-l border-sdc-border"} px-1 py-1.5 text-center text-[10px] ${
                         subColHeaderBg(col) || "bg-sdc-gray-100 text-sdc-gray-700"
                       }`}
                     >
@@ -798,7 +797,7 @@ export default async function MonthlyEtcPage({
                         key={`std-${col}`}
                         // Heavy divider before each Standard block; "% Total"
                         // stays thin as it shares the Total ETC block.
-                        className={`${col === "% Total" ? "border-l border-sdc-border" : STD_EDGE} bg-[#D6E4F0]/60 px-1 py-1.5 text-right text-[10px] text-sdc-blue-dark`}
+                        className={`${col === "% Total" ? "border-l border-sdc-border" : STD_EDGE} bg-[#D6E4F0]/60 px-1 py-1.5 text-center text-[10px] text-sdc-blue-dark`}
                       >
                         {col}
                       </th>
@@ -837,9 +836,9 @@ export default async function MonthlyEtcPage({
                   return (
                     <tr key={job.id} className={`hover:bg-sdc-blue-light/40 ${zebra}`}>
                       <td className={`sticky left-0 z-10 w-10 min-w-10 px-2 py-1 text-center text-sdc-gray-400 ${zebraSticky}`}>{jobIndex + 1}</td>
-                      <td className={`sticky left-10 z-10 w-20 min-w-20 px-3 py-1 font-mono text-sdc-gray-400 ${zebraSticky}`}>{job.jobId}</td>
+                      <td className={`sticky left-10 z-10 w-20 min-w-20 px-3 py-1 text-center font-mono text-sdc-gray-400 ${zebraSticky}`}>{job.jobId}</td>
                       <td
-                        className={`sticky left-[120px] z-10 min-w-[260px] whitespace-nowrap px-3 py-1 font-medium text-sdc-navy ${zebraSticky}`}
+                        className={`sticky left-[120px] z-10 min-w-[260px] whitespace-nowrap px-3 py-1 text-center font-medium text-sdc-navy ${zebraSticky}`}
                         title={job.jobName}
                       >
                         {job.jobName}
@@ -893,19 +892,19 @@ export default async function MonthlyEtcPage({
                         groupGrandTotals[group].newEtc += totals[group].newEtc;
                         return (
                           <Fragment key={group}>
-                            <td className={`${gi === 0 ? PHASE_EDGE : "border-l border-sdc-border"} bg-[#5E91D3] px-1 py-1 text-right text-xs text-sdc-gray-700`}>
+                            <td className={`${gi === 0 ? PHASE_EDGE : "border-l border-sdc-border"} bg-[#5E91D3] px-1 py-1 text-center text-[10px] text-sdc-gray-700`}>
                               {wholeNum(totals[group].prior)}
                             </td>
-                            <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1 text-right text-xs text-sdc-gray-500`}>
+                            <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1 text-center text-[10px] text-sdc-gray-500`}>
                               {wholeNum(totals[group].worked)}
                             </td>
-                            <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-1 py-1 text-right text-xs text-sdc-gray-500`}>
+                            <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-1 py-1 text-center text-[10px] text-sdc-gray-500`}>
                               {wholeNum(hoursLeft)}
                             </td>
-                            <td className={`border-l border-sdc-border ${newEtcBg(true)} px-1 py-1 text-right text-xs font-medium text-sdc-navy`}>
+                            <td className={`border-l border-sdc-border ${newEtcBg(true)} px-1 py-1 text-center text-[10px] font-medium text-sdc-navy`}>
                               {wholeNum(totals[group].newEtc)}
                             </td>
-                            <td className={`border-l border-sdc-border ${diffBg(diff)} px-1 py-1 text-right text-xs text-sdc-gray-700`}>
+                            <td className={`border-l border-sdc-border ${diffBg(diff)} px-1 py-1 text-center text-[10px] text-sdc-gray-700`}>
                               {wholeNum(diff)}
                             </td>
                           </Fragment>
@@ -940,21 +939,21 @@ export default async function MonthlyEtcPage({
 
                         return (
                           <Fragment key="parts-cost">
-                            <td className={`${PHASE_EDGE} bg-[#5E91D3] px-1 py-1 text-right text-xs text-sdc-gray-700`}>
+                            <td className={`${PHASE_EDGE} bg-[#5E91D3] px-1 py-1 text-center text-[10px] text-sdc-gray-700`}>
                               {currency(prior)}
                             </td>
-                            <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1`}>
+                            <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1 text-center`}>
                               {/* Not manager-editable — always Power BI's actual, passed through as a
                                   hidden field so submitMonth's generic per-entry loop still works. */}
                               <input type="hidden" name={`hoursWorked__${partsCostEntry.id}`} value={spent} />
-                              <span className="block w-16 truncate text-right text-xs text-sdc-gray-600" title={currency(spent)}>
+                              <span className="block w-16 truncate text-center text-[10px] text-sdc-gray-600" title={currency(spent)}>
                                 {currency(spent)}
                               </span>
                             </td>
-                            <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-1 py-1 text-right text-xs text-sdc-gray-500`}>
+                            <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-1 py-1 text-center text-[10px] text-sdc-gray-500`}>
                               {currency(moneyLeft)}
                             </td>
-                            <td className={`border-l border-sdc-border ${newEtcBg(decidedCost)} px-1 py-1`}>
+                            <td className={`border-l border-sdc-border ${newEtcBg(decidedCost)} px-1 py-1 text-center`}>
                               <EtcDraftInput
                                 entryId={partsCostEntry.id}
                                 name={`newEtcOverride__${partsCostEntry.id}`}
@@ -972,12 +971,12 @@ export default async function MonthlyEtcPage({
                                 placeholder={spent === 0 || draftCost != null ? undefined : wholeNum(suggestedCost)}
                                 disabled={locked}
                                 ariaLabel={`New ETC cost override, ${job.jobName}, Parts Cost`}
-                                className={`w-16 [appearance:textfield] rounded-md border-none bg-transparent px-1.5 py-1 text-right text-xs outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none focus:bg-white focus:shadow-sm ${
+                                className={`w-16 [appearance:textfield] rounded-md border-none bg-transparent px-1.5 py-1 text-center text-[10px] outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none focus:bg-white focus:shadow-sm ${
                                   decidedCost ? "text-sdc-gray-600" : "text-sdc-yellow-text placeholder:text-sdc-yellow-text/60"
                                 }`}
                               />
                             </td>
-                            <td className={`border-l border-sdc-border ${diffBg(diffCost)} px-1 py-1 text-right text-xs text-sdc-gray-700`}>
+                            <td className={`border-l border-sdc-border ${diffBg(diffCost)} px-1 py-1 text-center text-[10px] text-sdc-gray-700`}>
                               {currency(diffCost)}
                             </td>
                           </Fragment>
@@ -1005,7 +1004,7 @@ export default async function MonthlyEtcPage({
                         PARTS_COST_SUB_COLUMNS.length +
                         (showStandards ? STANDARD_LEAF_COLUMNS.length : 0)
                       }
-                      className="px-4 py-5 text-sdc-gray-400"
+                      className="px-4 py-5 text-center text-sdc-gray-400"
                     >
                       No active jobs found.
                     </td>
@@ -1013,7 +1012,7 @@ export default async function MonthlyEtcPage({
                 )}
                 {jobs.length > 0 && (
                   <tr className="border-t-2 border-sdc-navy bg-sdc-gray-100 font-medium">
-                    <td className="sticky left-0 z-10 bg-sdc-gray-100 px-3 py-2" colSpan={3}>
+                    <td className="sticky left-0 z-10 bg-sdc-gray-100 px-3 py-2 text-center" colSpan={3}>
                       Total
                     </td>
                     {visibleCols.map((s, sIdx) => {
@@ -1022,11 +1021,11 @@ export default async function MonthlyEtcPage({
                       const diff = hoursLeft - t.newEtc;
                       return (
                         <Fragment key={s.code}>
-                          <td className={`${edgeFor(s.code, sIdx)} bg-[#5E91D3] px-1 py-1 text-right text-xs text-sdc-gray-700`}>{wholeNum(t.prior)}</td>
-                          <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1 text-right text-xs text-sdc-navy`}>{wholeNum(t.worked)}</td>
-                          <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-1 py-1 text-right text-xs text-sdc-navy`}>{wholeNum(hoursLeft)}</td>
-                          <td className={`border-l border-sdc-border ${newEtcBg(true)} px-1 py-1 text-right text-xs text-sdc-navy`}>{wholeNum(t.newEtc)}</td>
-                          <td className={`border-l border-sdc-border ${diffBg(diff)} px-1 py-1 text-right text-xs text-sdc-gray-700`}>{wholeNum(diff)}</td>
+                          <td className={`${edgeFor(s.code, sIdx)} bg-[#5E91D3] px-1 py-1 text-center text-[10px] text-sdc-gray-700`}>{wholeNum(t.prior)}</td>
+                          <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1 text-center text-[10px] text-sdc-navy`}>{wholeNum(t.worked)}</td>
+                          <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-1 py-1 text-center text-[10px] text-sdc-navy`}>{wholeNum(hoursLeft)}</td>
+                          <td className={`border-l border-sdc-border ${newEtcBg(true)} px-1 py-1 text-center text-[10px] text-sdc-navy`}>{wholeNum(t.newEtc)}</td>
+                          <td className={`border-l border-sdc-border ${diffBg(diff)} px-1 py-1 text-center text-[10px] text-sdc-gray-700`}>{wholeNum(diff)}</td>
                         </Fragment>
                       );
                     })}
@@ -1036,11 +1035,11 @@ export default async function MonthlyEtcPage({
                       const diff = hoursLeft - t.newEtc;
                       return (
                         <Fragment key={group}>
-                          <td className={`${gi === 0 ? PHASE_EDGE : "border-l border-sdc-border"} bg-[#5E91D3] px-1 py-1 text-right text-xs text-sdc-gray-700`}>{wholeNum(t.prior)}</td>
-                          <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1 text-right text-xs text-sdc-blue-dark`}>{wholeNum(t.worked)}</td>
-                          <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-1 py-1 text-right text-xs text-sdc-blue-dark`}>{wholeNum(hoursLeft)}</td>
-                          <td className={`border-l border-sdc-border ${newEtcBg(true)} px-1 py-1 text-right text-xs text-sdc-blue-dark`}>{wholeNum(t.newEtc)}</td>
-                          <td className={`border-l border-sdc-border ${diffBg(diff)} px-1 py-1 text-right text-xs text-sdc-gray-700`}>{wholeNum(diff)}</td>
+                          <td className={`${gi === 0 ? PHASE_EDGE : "border-l border-sdc-border"} bg-[#5E91D3] px-1 py-1 text-center text-[10px] text-sdc-gray-700`}>{wholeNum(t.prior)}</td>
+                          <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1 text-center text-[10px] text-sdc-blue-dark`}>{wholeNum(t.worked)}</td>
+                          <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-1 py-1 text-center text-[10px] text-sdc-blue-dark`}>{wholeNum(hoursLeft)}</td>
+                          <td className={`border-l border-sdc-border ${newEtcBg(true)} px-1 py-1 text-center text-[10px] text-sdc-blue-dark`}>{wholeNum(t.newEtc)}</td>
+                          <td className={`border-l border-sdc-border ${diffBg(diff)} px-1 py-1 text-center text-[10px] text-sdc-gray-700`}>{wholeNum(diff)}</td>
                         </Fragment>
                       );
                     })}
@@ -1050,11 +1049,11 @@ export default async function MonthlyEtcPage({
                       const diffCost = moneyLeft - t.newEtc;
                       return (
                         <Fragment key="parts-cost-total">
-                          <td className={`${PHASE_EDGE} bg-[#5E91D3] px-1 py-1 text-right text-xs text-sdc-gray-700`}>{currency(t.prior)}</td>
-                          <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1 text-right text-xs text-sdc-navy`}>{currency(t.worked)}</td>
-                          <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-1 py-1 text-right text-xs text-sdc-navy`}>{currency(moneyLeft)}</td>
-                          <td className={`border-l border-sdc-border ${newEtcBg(true)} px-1 py-1 text-right text-xs text-sdc-navy`}>{currency(t.newEtc)}</td>
-                          <td className={`border-l border-sdc-border ${diffBg(diffCost)} px-1 py-1 text-right text-xs text-sdc-gray-700`}>{currency(diffCost)}</td>
+                          <td className={`${PHASE_EDGE} bg-[#5E91D3] px-1 py-1 text-center text-[10px] text-sdc-gray-700`}>{currency(t.prior)}</td>
+                          <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1 text-center text-[10px] text-sdc-navy`}>{currency(t.worked)}</td>
+                          <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-1 py-1 text-center text-[10px] text-sdc-navy`}>{currency(moneyLeft)}</td>
+                          <td className={`border-l border-sdc-border ${newEtcBg(true)} px-1 py-1 text-center text-[10px] text-sdc-navy`}>{currency(t.newEtc)}</td>
+                          <td className={`border-l border-sdc-border ${diffBg(diffCost)} px-1 py-1 text-center text-[10px] text-sdc-gray-700`}>{currency(diffCost)}</td>
                         </Fragment>
                       );
                     })()}

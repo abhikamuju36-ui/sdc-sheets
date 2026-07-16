@@ -99,21 +99,21 @@ export default async function AuditLogPage({
           <tbody>
             {logs.map((log, i) => (
               <tr key={log.id} className={`${TABLE_ROW_HOVER} align-top ${i % 2 === 1 ? "bg-sdc-gray-50/60" : ""}`}>
-                <td className="px-2 py-2 text-center text-xs text-sdc-gray-400">{(page - 1) * PAGE_SIZE + i + 1}</td>
-                <td className="whitespace-nowrap px-4 py-2 text-xs text-sdc-gray-500">
+                <td className="px-2 py-2 text-center text-[10px] text-sdc-gray-400">{(page - 1) * PAGE_SIZE + i + 1}</td>
+                <td className="whitespace-nowrap px-4 py-2 text-center text-[10px] text-sdc-gray-500">
                   {log.createdAt.toISOString().slice(0, 16).replace("T", " ")}
                 </td>
-                <td className="px-3 py-2 text-xs text-sdc-gray-700">{log.userEmail ?? "—"}</td>
-                <td className="px-3 py-2 font-mono text-xs text-sdc-navy">{log.action}</td>
-                <td className="px-3 py-2 text-xs text-sdc-gray-500">
+                <td className="px-3 py-2 text-center text-[10px] text-sdc-gray-700">{log.userEmail ?? "—"}</td>
+                <td className="px-3 py-2 text-center font-mono text-[10px] text-sdc-navy">{log.action}</td>
+                <td className="px-3 py-2 text-center text-[10px] text-sdc-gray-500">
                   {log.entityType ? `${log.entityType}${log.entityId ? ` #${log.entityId}` : ""}` : "—"}
                 </td>
-                <td className="px-3 py-2 text-xs text-sdc-gray-700">
+                <td className="px-3 py-2 text-center text-[10px] text-sdc-gray-700">
                   <p>{log.summary}</p>
                   {log.metadata != null && (
                     <details className="mt-1">
-                      <summary className="cursor-pointer text-[11px] text-sdc-blue underline">details</summary>
-                      <pre className="mt-1 max-w-xl overflow-x-auto rounded bg-sdc-gray-50 p-2 text-[11px] text-sdc-gray-600">
+                      <summary className="cursor-pointer text-[10px] text-sdc-blue underline">details</summary>
+                      <pre className="mt-1 max-w-xl overflow-x-auto rounded bg-sdc-gray-50 p-2 text-[10px] text-sdc-gray-600">
                         {JSON.stringify(log.metadata, null, 2)}
                       </pre>
                     </details>
@@ -123,7 +123,7 @@ export default async function AuditLogPage({
             ))}
             {logs.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-5 text-sdc-gray-400">
+                <td colSpan={6} className="px-4 py-5 text-center text-[10px] text-sdc-gray-400">
                   No audit log entries match this filter.
                 </td>
               </tr>

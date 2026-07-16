@@ -13,7 +13,9 @@ export async function register() {
   if (g.__pbiAutoSyncStarted) return;
   g.__pbiAutoSyncStarted = true;
 
-  const { syncActualHoursFromPowerBi } = await import("@/lib/sync-powerbi");
+  const { syncActualHoursFromPowerBi, syncHoursWorkedFromPowerBi } = await import("@/lib/sync-powerbi");
+  const { prisma } = await import("@/lib/prisma");
+  const { isMonthLocked } = await import("@/lib/etc");
 
   const runSync = async () => {
     try {
@@ -23,6 +25,24 @@ export async function register() {
       );
     } catch (err) {
       console.error("[auto-sync] Power BI actual hours sync failed:", err);
+    }
+
+    // Keeps the Monthly ETC grid's per-section "Hours Worked Month" column
+    // live without waiting for a manual Run Report click — same PBI measure
+    // Run Report already pulls, just on the same 10-minute cadence as the
+    // job-level sync above. Scoped to the single latest month and skipped
+    // entirely once it's locked (submitted) — a locked month is frozen
+    // history and must never be touched outside an explicit admin reopen.
+    try {
+      const latest = await prisma.etcEntry.findFirst({ orderBy: { month: "desc" }, select: { month: true } });
+      if (!latest) return;
+      const entries = await prisma.etcEntry.findMany({ where: { month: latest.month }, select: { needsReview: true } });
+      if (isMonthLocked(entries)) return;
+
+      const result = await syncHoursWorkedFromPowerBi(latest.month);
+      console.log(`[auto-sync] ETC hours worked (${latest.month}): ${result.rowsUpdated} rows updated, ${result.rowsSkipped} skipped`);
+    } catch (err) {
+      console.error("[auto-sync] ETC hours worked sync failed:", err);
     }
   };
 

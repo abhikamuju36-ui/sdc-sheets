@@ -1,5 +1,6 @@
 "use server";
 
+import { createHmac, timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { calcHoursLeft, suggestNewEtc, isMonthLocked, round2, prevMonth, nextMonth, isValidMonth, isSafeForLiveEtcSync } from "@/lib/etc";
@@ -9,6 +10,18 @@ import { syncEtcHistoryFromPowerBi } from "@/lib/sync-etc-history";
 import { ETC_TRACKED_CODES, PARTS_COST_SECTION } from "@/lib/sections";
 import { revalidatePath } from "next/cache";
 import { logAudit } from "@/lib/audit";
+
+// Submit and Lock's confirmation gate — an "are you sure" step before
+// freezing a month's numbers, not a real access boundary, so the password is
+// fixed rather than env-configurable. Checked here (not client-side) so it
+// can't be read out of the page JS bundle.
+const SUBMIT_LOCK_PASSWORD = "sdcautomation";
+
+function safeEqual(a: string, b: string): boolean {
+  const da = createHmac("sha256", "cmp").update(a).digest();
+  const db = createHmac("sha256", "cmp").update(b).digest();
+  return timingSafeEqual(da, db);
+}
 
 // The sheet physically had one working month; the app must not let an
 // arbitrary past/future month be seeded out of order — Prior ETC carries
@@ -141,6 +154,11 @@ async function seedMonth(month: string) {
 // row before writing anything — a single bad value rejects the whole submission
 // rather than leaving the month half-confirmed.
 export async function submitMonth(month: string, formData: FormData) {
+  const submittedPassword = String(formData.get("submitLockPassword") ?? "");
+  if (!safeEqual(submittedPassword, SUBMIT_LOCK_PASSWORD)) {
+    throw new Error("Incorrect password — Submit and Lock was not run.");
+  }
+
   const session = await auth();
   const userId = (session?.user as { id?: string } | undefined)?.id;
 

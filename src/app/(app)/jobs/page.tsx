@@ -105,7 +105,7 @@ export default async function JobsPage({
       <div className={`${card("p-0")} overflow-x-auto`}>
         <div className="grid min-w-[900px] grid-cols-[40px_76px_minmax(240px,1fr)_180px_110px_120px] items-center gap-4 border-b border-sdc-border-soft bg-sdc-gray-50/60 px-6 py-3">
           {["#", "Job Id", "Job Name", "Customer", "Type", "Status"].map((h) => (
-            <span key={h} className="text-[11px] font-semibold tracking-wider text-sdc-gray-400 uppercase">
+            <span key={h} className="text-center text-[10px] font-semibold tracking-wider text-sdc-gray-400 uppercase">
               {h}
             </span>
           ))}
@@ -118,11 +118,11 @@ export default async function JobsPage({
             <Link
               key={job.id}
               href={`/jobs/${job.id}`}
-              className="grid min-w-[900px] grid-cols-[40px_76px_minmax(240px,1fr)_180px_110px_120px] items-center gap-4 px-6 py-3 text-sm transition-colors hover:bg-sdc-blue-light/40"
+              className="grid min-w-[900px] grid-cols-[40px_76px_minmax(240px,1fr)_180px_110px_120px] items-center gap-4 px-6 py-3 text-center text-[10px] transition-colors hover:bg-sdc-blue-light/40"
             >
               <span className="text-sdc-gray-400 tabular-nums">{i + 1}</span>
               <span className="font-mono text-sdc-gray-500 tabular-nums">{job.jobId}</span>
-              <span className="flex min-w-0 items-center gap-2">
+              <span className="flex min-w-0 items-center justify-center gap-2">
                 <span className="truncate font-semibold text-sdc-navy">{job.jobName}</span>
                 {noUpstreamData && (
                   <span
@@ -136,7 +136,7 @@ export default async function JobsPage({
               <span className="truncate text-sdc-gray-600">{job.customer ?? "—"}</span>
               <span className="text-sdc-gray-600">{job.type ?? "—"}</span>
               <span
-                className={`flex items-center gap-1.5 text-[12.5px] font-semibold ${
+                className={`flex items-center justify-center gap-1.5 text-[10px] font-semibold ${
                   job.status === "Complete" ? "text-sdc-green-text" : "text-sdc-blue"
                 }`}
               >

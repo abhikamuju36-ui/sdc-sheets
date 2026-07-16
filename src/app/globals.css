@@ -230,3 +230,15 @@ tr.row-selected > td:first-child {
 .styled-scrollbar::-webkit-scrollbar-corner {
   background: var(--sdc-gray-50);
 }
+
+/* Column-resize drag handle (ColumnResize.tsx): a thin invisible strip on a
+ * header cell's right edge that highlights on hover/drag so it reads as
+ * grabbable without adding visual noise the rest of the time. */
+.col-resize-handle {
+  cursor: col-resize;
+  touch-action: none;
+}
+.col-resize-handle:hover,
+.col-resize-handle:active {
+  background-color: rgba(21, 116, 196, 0.35);
+}

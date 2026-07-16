@@ -24,7 +24,7 @@ export default async function EmployeesPage({
   });
   const activeCount = employees.filter((e) => e.active).length;
 
-  const cellInput = `${INPUT} w-full px-2.5 py-1.5 text-xs`;
+  const cellInput = `${INPUT} w-full px-2.5 py-1.5 text-[10px]`;
   const GRID_COLS = "grid-cols-[40px_minmax(160px,1fr)_180px_150px_140px_110px_170px]";
 
   return (
@@ -96,7 +96,7 @@ export default async function EmployeesPage({
       <div className={`${card("p-0")} overflow-x-auto`}>
         <div className={`grid ${GRID_COLS} min-w-[1080px] items-center gap-4 border-b border-sdc-border-soft bg-sdc-gray-50/60 px-6 py-3`}>
           {["#", "Name", "Department", "Billing group", "Paylocity ID", "Status", "Actions"].map((h) => (
-            <span key={h} className={`text-[11px] font-semibold tracking-wider text-sdc-gray-400 uppercase ${h === "Actions" ? "text-right" : ""}`}>
+            <span key={h} className="text-center text-[10px] font-semibold tracking-wider text-sdc-gray-400 uppercase">
               {h}
             </span>
           ))}
@@ -104,18 +104,22 @@ export default async function EmployeesPage({
         <div className="divide-y divide-sdc-border-soft">
           {employees.map((e, i) => (
             <div key={e.id} className={`grid ${GRID_COLS} min-w-[1080px] items-center gap-4 px-6 py-2.5 transition-colors hover:bg-sdc-blue-light/30`}>
-              <span className="text-sm text-sdc-gray-400 tabular-nums">{i + 1}</span>
-              <input name="name" defaultValue={e.name} required form={`emp-${e.id}`} className={cellInput} aria-label={`Name, ${e.name}`} />
-              <input name="department" defaultValue={e.department ?? ""} form={`emp-${e.id}`} className={cellInput} aria-label={`Department, ${e.name}`} />
-              <select name="billingGroup" defaultValue={e.billingGroup ?? ""} form={`emp-${e.id}`} className={cellInput} aria-label={`Billing group, ${e.name}`}>
+              <span className="text-center text-[10px] text-sdc-gray-400 tabular-nums">{i + 1}</span>
+              <input name="name" defaultValue={e.name} required form={`emp-${e.id}`} className={`${cellInput} text-center`} aria-label={`Name, ${e.name}`} />
+              <input name="department" defaultValue={e.department ?? ""} form={`emp-${e.id}`} className={`${cellInput} text-center`} aria-label={`Department, ${e.name}`} />
+              <select name="billingGroup" defaultValue={e.billingGroup ?? ""} form={`emp-${e.id}`} className={`${cellInput} text-center`} aria-label={`Billing group, ${e.name}`}>
                 <option value="">—</option>
                 <option value="Engineering">Engineering</option>
                 <option value="Shop">Shop</option>
               </select>
-              <input name="paylocityId" defaultValue={e.paylocityId ?? ""} form={`emp-${e.id}`} className={`${cellInput} font-mono`} aria-label={`Paylocity ID, ${e.name}`} />
-              <StatusBadge variant={e.active ? "active" : "neutral"}>{e.active ? "Active" : "Inactive"}</StatusBadge>
-              <div className="flex justify-end gap-2">
-                <button type="submit" form={`emp-${e.id}`} className="rounded-md border border-sdc-border px-2.5 py-1 text-xs font-semibold text-sdc-navy transition-colors hover:bg-sdc-blue-light">
+              <input name="paylocityId" defaultValue={e.paylocityId ?? ""} form={`emp-${e.id}`} className={`${cellInput} text-center font-mono`} aria-label={`Paylocity ID, ${e.name}`} />
+              <div className="flex justify-center">
+                <StatusBadge variant={e.active ? "active" : "neutral"} style={{ fontSize: "10px" }}>
+                  {e.active ? "Active" : "Inactive"}
+                </StatusBadge>
+              </div>
+              <div className="flex justify-center gap-2">
+                <button type="submit" form={`emp-${e.id}`} className="rounded-md border border-sdc-border px-2.5 py-1 text-[10px] font-semibold text-sdc-navy transition-colors hover:bg-sdc-blue-light">
                   Save
                 </button>
                 <button
@@ -123,8 +127,8 @@ export default async function EmployeesPage({
                   form={`emp-toggle-${e.id}`}
                   className={
                     e.active
-                      ? "rounded-md border border-[#F0D6D6] px-2.5 py-1 text-xs font-semibold text-[#B03A3A] transition-colors hover:bg-[#FBEDED]"
-                      : "rounded-md border border-sdc-border px-2.5 py-1 text-xs font-semibold text-sdc-navy transition-colors hover:bg-sdc-blue-light"
+                      ? "rounded-md border border-[#F0D6D6] px-2.5 py-1 text-[10px] font-semibold text-[#B03A3A] transition-colors hover:bg-[#FBEDED]"
+                      : "rounded-md border border-sdc-border px-2.5 py-1 text-[10px] font-semibold text-sdc-navy transition-colors hover:bg-sdc-blue-light"
                   }
                 >
                   {e.active ? "Deactivate" : "Reactivate"}

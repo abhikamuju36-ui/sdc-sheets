@@ -223,7 +223,7 @@ export function EtcStandardCells({ job }: { job: StandardJobBase }) {
   const std = getComputed(job.jobId);
   if (!std) return null;
 
-  const cell = (edge: boolean) => `${edge ? STD_EDGE : "border-l border-sdc-border"} px-2 py-1 text-right text-xs text-sdc-navy`;
+  const cell = (edge: boolean) => `${edge ? STD_EDGE : "border-l border-sdc-border"} px-2 py-1 text-center text-[10px] text-sdc-navy`;
 
   return (
     <>
@@ -237,7 +237,7 @@ export function EtcStandardCells({ job }: { job: StandardJobBase }) {
         <ContingencyNotesInputs jobId={job.jobId} field="contingency" jobName={job.jobName} contingency={job.contingencyAmount} notes={job.notes} editable={editable} />
       </td>
       <td className={`${cell(true)} bg-sdc-yellow-bg/60 font-medium`}>{currency(std.totalStandardFees)}</td>
-      <td className={`${STD_EDGE} px-2 py-1 text-left text-xs text-sdc-gray-500 whitespace-nowrap`} title={job.notes}>
+      <td className={`${STD_EDGE} px-2 py-1 text-center text-[10px] text-sdc-gray-500 whitespace-nowrap`} title={job.notes}>
         <ContingencyNotesInputs jobId={job.jobId} field="notes" jobName={job.jobName} contingency={job.contingencyAmount} notes={job.notes} editable={editable} />
       </td>
     </>
@@ -297,7 +297,7 @@ function ContingencyNotesInputs({
       onBlur={save}
       aria-label={`${field === "contingency" ? "Contingency amount" : "Notes"}, ${jobName}`}
       placeholder="—"
-      className={`${field === "contingency" ? "w-20 text-right" : "w-28 text-left"} border-none bg-transparent text-xs outline-none focus:bg-white`}
+      className={`${field === "contingency" ? "w-20 text-center" : "w-28 text-center"} border-none bg-transparent text-[10px] outline-none focus:bg-white`}
     />
   );
 }
@@ -310,14 +310,14 @@ export function StandardGrandCells() {
 
   return (
     <>
-      <td className={`${STD_EDGE} px-2 py-1 text-right text-xs text-sdc-navy`}>{currency(grand.totalEtcDollars)}</td>
-      <td className="border-l border-sdc-border px-2 py-1 text-right text-xs text-sdc-navy">{percent(grand.percentOfTotal)}</td>
-      <td className={`${STD_EDGE} px-2 py-1 text-right text-xs text-sdc-navy`}>{currency(grand.standardFees)}</td>
-      <td className={`${STD_EDGE} px-2 py-1 text-right text-xs text-sdc-navy`}>
+      <td className={`${STD_EDGE} px-2 py-1 text-center text-[10px] text-sdc-navy`}>{currency(grand.totalEtcDollars)}</td>
+      <td className="border-l border-sdc-border px-2 py-1 text-center text-[10px] text-sdc-navy">{percent(grand.percentOfTotal)}</td>
+      <td className={`${STD_EDGE} px-2 py-1 text-center text-[10px] text-sdc-navy`}>{currency(grand.standardFees)}</td>
+      <td className={`${STD_EDGE} px-2 py-1 text-center text-[10px] text-sdc-navy`}>
         {grand.contingencyAmount ? currency(grand.contingencyAmount) : "—"}
       </td>
-      <td className={`${STD_EDGE} px-2 py-1 text-right text-xs font-semibold text-sdc-navy`}>{currency(grand.totalStandardFees)}</td>
-      <td className={`${STD_EDGE} px-2 py-1`} />
+      <td className={`${STD_EDGE} px-2 py-1 text-center text-[10px] font-semibold text-sdc-navy`}>{currency(grand.totalStandardFees)}</td>
+      <td className={`${STD_EDGE} px-2 py-1 text-center`} />
     </>
   );
 }

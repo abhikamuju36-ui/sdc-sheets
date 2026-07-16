@@ -16,12 +16,19 @@ export type StatusVariant = keyof typeof VARIANT_CLASSES;
 export function StatusBadge({
   variant,
   children,
+  style,
 }: {
   variant: StatusVariant;
   children: React.ReactNode;
+  // Inline, not a className override — text-xs is baked into the base
+  // classes below, and a second conflicting Tailwind font-size utility
+  // class would race it for the same CSS property with no guaranteed
+  // winner (bit us once already this session with `sticky`/`relative`).
+  // An inline style always wins regardless of Tailwind's generated order.
+  style?: React.CSSProperties;
 }) {
   return (
-    <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${VARIANT_CLASSES[variant]}`}>
+    <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${VARIANT_CLASSES[variant]}`} style={style}>
       {children}
     </span>
   );

@@ -12,6 +12,37 @@ import { NewProjectRows } from "@/components/NewProjectRows";
 import { DateCell } from "@/components/DateCell";
 import { saveQuotedHours } from "@/lib/quoted-actions";
 
+// Header banding, matching the real "Estimated Hours" tab's column colors
+// exactly (extracted from its theme + explicit fills) — phase row, then a
+// department-band row (Function Group), then the section name.
+const PHASE_HEADER_COLOR: Record<string, string> = {
+  "Complete Design & Build": "bg-[#D9D9D9]",
+  "Machine Testing": "bg-[#FBC6BB]",
+  "Teardown & Install": "bg-[#D9D9D9]",
+  Warranty: "bg-[#D9D9D9]",
+};
+const GROUP_HEADER_COLOR: Record<string, string> = {
+  PM: "bg-[#C3C9D0]",
+  ME: "bg-[#C3C9D0]",
+  CE: "bg-[#DCEDD5]",
+  "General Engineering": "bg-[#4A5E71] text-white",
+  Shop: "bg-[#F5B493]",
+  Engineering: "bg-[#CCFFFF]",
+};
+
+// Consecutive runs of the same group within a phase's visible sections, for
+// the group-band row's colSpans (mirrors PHASE_GROUPS but re-derived per
+// request since visibility is filtered live via the `cols` param).
+function groupRuns(sections: { code: string; group: string }[]) {
+  const runs: { group: string; count: number }[] = [];
+  for (const s of sections) {
+    const last = runs[runs.length - 1];
+    if (last && last.group === s.group) last.count += 1;
+    else runs.push({ group: s.group, count: 1 });
+  }
+  return runs;
+}
+
 // <input type="date"> wants "" or "YYYY-MM-DD" — never "—" (formatDate's
 // display placeholder), which the browser would reject as an invalid date.
 function dateInputValue(d: Date | null): string {
@@ -153,54 +184,71 @@ export default async function QuotedPage({
         <table className={`text-sm ${TABLE_GRID}`}>
           <thead className="sticky top-0 z-20 bg-sdc-gray-100">
             <tr className={TABLE_HEADER_ROW}>
-              <th rowSpan={2} className="sticky left-0 z-10 w-8 min-w-8 bg-sdc-gray-100 px-1 py-2 text-center align-bottom">
+              <th rowSpan={3} className="sticky left-0 z-10 w-8 min-w-8 bg-sdc-gray-100 px-1 py-2 text-center align-bottom">
                 #
               </th>
-              <th rowSpan={2} className="sticky left-8 z-10 bg-sdc-gray-100 px-2 py-2 align-bottom">
+              <th rowSpan={3} className="sticky left-8 z-10 w-20 min-w-20 max-w-20 overflow-hidden truncate bg-sdc-gray-100 px-2 py-2 align-bottom">
                 <SortButton sortKey="jobId" label="Job Id" currentSort={sortKey} currentDir={sortDir} />
               </th>
-              <th rowSpan={2} className="sticky left-[96px] z-10 min-w-[280px] border-l border-r border-sdc-border bg-sdc-gray-100 px-2 py-2 align-bottom">
+              <th
+                rowSpan={3}
+                style={{ width: "var(--job-col-width, 280px)", minWidth: "var(--job-col-width, 280px)" }}
+                className="sticky left-[112px] z-10 border-l border-r border-sdc-border bg-sdc-gray-100 px-2 py-2 align-bottom"
+              >
                 Job
+                <div
+                  className="col-resize-handle absolute -right-1 inset-y-0 z-30 w-2.5"
+                  data-resize-var="--job-col-width"
+                  data-resize-min="160"
+                  data-resize-max="640"
+                  title="Drag to resize"
+                  style={{ touchAction: "none" }}
+                />
               </th>
-              <th rowSpan={2} className="px-2 py-2 align-bottom">
+              <th rowSpan={3} className="px-2 py-2 align-bottom">
                 Customer
               </th>
-              <th rowSpan={2} className="px-2 py-2 align-bottom">
+              <th rowSpan={3} className="px-2 py-2 align-bottom">
                 Type
               </th>
-              <th rowSpan={2} className="px-2 py-2 align-bottom">
+              <th rowSpan={3} className="px-2 py-2 align-bottom">
                 Billable
               </th>
-              <th rowSpan={2} className="px-2 py-2 align-bottom">
+              <th rowSpan={3} className="px-2 py-2 align-bottom">
                 <SortButton sortKey="status" label="Status" currentSort={sortKey} currentDir={sortDir} />
               </th>
-              <th rowSpan={2} className="px-2 py-2 align-bottom">
+              <th rowSpan={3} className="px-2 py-2 align-bottom">
                 <SortButton sortKey="startDate" label="Start Date" currentSort={sortKey} currentDir={sortDir} />
               </th>
-              <th rowSpan={2} className="px-2 py-2 align-bottom">
+              <th rowSpan={3} className="px-2 py-2 align-bottom">
                 <SortButton sortKey="completeDate" label="Complete Date" currentSort={sortKey} currentDir={sortDir} />
               </th>
               {PHASE_GROUPS.map((g) => {
                 const visible = visibleSectionsByPhase.get(g.phase) ?? [];
+                const color = PHASE_HEADER_COLOR[g.phase] ?? "bg-sdc-blue-light";
                 return visible.length ? (
                   <th
                     key={g.phase}
                     colSpan={visible.length + 1}
-                    className="border-l border-sdc-border bg-sdc-blue-light px-2 py-2 text-center text-sdc-blue"
+                    className={`border-l border-sdc-border px-2 py-2 text-center italic text-sdc-navy ${color}`}
                   >
                     {g.phase}
                   </th>
                 ) : (
-                  <th key={g.phase} className="border-l border-sdc-border px-1.5 py-2 text-center align-bottom text-sdc-blue" rowSpan={2}>
+                  <th
+                    key={g.phase}
+                    className={`border-l border-sdc-border px-1.5 py-2 text-center align-bottom italic text-sdc-navy ${color}`}
+                    rowSpan={3}
+                  >
                     {g.phase}
                   </th>
                 );
               })}
-              <th rowSpan={2} className="sticky right-[84px] z-10 min-w-[84px] border-l border-sdc-border bg-sdc-gray-100 px-2 py-2 text-right align-bottom">
+              <th rowSpan={3} className="sticky right-[90px] z-10 min-w-[90px] border-l border-sdc-border bg-[#B8DCAB] px-2 py-2 text-center align-bottom">
                 Cost Quoted
               </th>
-              <th rowSpan={2} className="sticky right-0 z-10 min-w-[84px] bg-sdc-gray-100 px-2 py-2 text-right align-bottom">
-                Cost Actual
+              <th rowSpan={3} className="sticky right-0 z-10 min-w-[90px] bg-[#B8DCAB] px-2 py-2 text-center align-bottom">
+                Cost Actual Historical
               </th>
             </tr>
             <tr className={TABLE_HEADER_ROW}>
@@ -208,18 +256,38 @@ export default async function QuotedPage({
                 const sections = visibleSectionsByPhase.get(g.phase) ?? [];
                 if (!sections.length) return [];
                 return [
-                  ...sections.map((s) => (
-                    <th key={s.code} title={s.code} className="w-14 border-l border-sdc-border px-1 py-2 text-center text-[10.5px] leading-tight">
-                      {s.name}
-                      <span className="block font-mono text-[9px] font-normal normal-case tracking-normal text-sdc-gray-400">
-                        {s.code}
-                      </span>
+                  ...groupRuns(sections).map((run, i) => (
+                    <th
+                      key={`${g.phase}-group-${i}`}
+                      colSpan={run.count}
+                      className={`border-l border-sdc-border px-1 py-1.5 text-center text-[10px] italic text-sdc-navy ${
+                        GROUP_HEADER_COLOR[run.group] ?? ""
+                      }`}
+                    >
+                      {run.group}
                     </th>
                   )),
-                  <th key={`${g.phase}-total`} className="w-12 border-l border-sdc-border bg-sdc-blue-light px-1 py-2 text-center text-[10.5px] text-sdc-blue-dark">
+                  <th
+                    key={`${g.phase}-total`}
+                    rowSpan={2}
+                    className="w-12 border-l border-sdc-border bg-sdc-blue-light px-1 py-2 text-center align-bottom text-[10px] text-sdc-blue-dark"
+                  >
                     Total
                   </th>,
                 ];
+              })}
+            </tr>
+            <tr className={TABLE_HEADER_ROW}>
+              {PHASE_GROUPS.flatMap((g) => {
+                const sections = visibleSectionsByPhase.get(g.phase) ?? [];
+                return sections.map((s) => (
+                  <th key={s.code} title={s.code} className="w-14 border-l border-sdc-border px-1 py-2 text-center text-[10px] leading-tight">
+                    {s.name}
+                    <span className="block font-mono text-[10px] font-normal normal-case tracking-normal text-sdc-gray-400">
+                      {s.code}
+                    </span>
+                  </th>
+                ));
               })}
             </tr>
           </thead>
@@ -230,7 +298,7 @@ export default async function QuotedPage({
             />
             {jobs.length === 0 && (
               <tr>
-                <td colSpan={9 + dataColumnCount + 2} className="px-4 py-5 text-sdc-gray-400">
+                <td colSpan={9 + dataColumnCount + 2} className="px-4 py-5 text-center text-sdc-gray-400">
                   No jobs found.
                 </td>
               </tr>
@@ -246,31 +314,39 @@ export default async function QuotedPage({
               const zebraSticky = isSdc ? "bg-[#caedfb]" : i % 2 === 1 ? "bg-sdc-gray-50" : "bg-white";
               return (
                 <tr key={job.id} className={`hover:bg-sdc-blue-light/40 ${zebra}`}>
-                  <td className={`sticky left-0 z-10 w-8 min-w-8 px-1 py-1.5 text-center text-xs text-sdc-gray-400 ${zebraSticky}`}>
+                  <td className={`sticky left-0 z-10 w-8 min-w-8 px-1 py-1.5 text-center text-[10px] text-sdc-gray-400 ${zebraSticky}`}>
                     {i + 1}
                   </td>
-                  <td className={`sticky left-8 z-10 whitespace-nowrap px-2 py-1.5 font-mono text-xs text-sdc-gray-500 ${zebraSticky}`}>
-                    #{job.jobId}
+                  <td
+                    title={job.jobId}
+                    className={`sticky left-8 z-10 w-20 min-w-20 max-w-20 overflow-hidden truncate px-2 py-1.5 text-center font-mono text-[10px] text-sdc-gray-500 ${zebraSticky}`}
+                  >
+                    {job.jobId}
                   </td>
-                  <td className={`sticky left-[96px] z-10 min-w-[280px] whitespace-nowrap border-l border-r border-sdc-border px-2 py-1.5 text-xs font-medium text-sdc-navy ${zebraSticky}`}>
+                  <td
+                    style={{ width: "var(--job-col-width, 280px)", minWidth: "var(--job-col-width, 280px)" }}
+                    className={`sticky left-[112px] z-10 whitespace-nowrap border-l border-r border-sdc-border px-2 py-1.5 text-center text-[10px] font-medium text-sdc-navy ${zebraSticky}`}
+                  >
                     <input
                       type="text"
                       name={`jobField__${job.id}__jobName`}
                       defaultValue={job.jobName}
                       aria-label={`Job Name, ${job.jobName}`}
+                      className="w-full min-w-0 text-center"
                     />
                   </td>
-                  <td className="whitespace-nowrap px-2 py-1.5 text-xs text-sdc-gray-600">
+                  <td className="whitespace-nowrap px-2 py-1.5 text-center text-[10px] text-sdc-gray-600">
                     <input
                       type="text"
                       name={`jobField__${job.id}__customer`}
                       defaultValue={job.customer ?? ""}
                       placeholder="—"
                       aria-label={`Customer, ${job.jobName}`}
+                      className="text-center"
                     />
                   </td>
-                  <td className="whitespace-nowrap px-2 py-1.5 text-xs text-sdc-gray-600">
-                    <select name={`jobField__${job.id}__type`} defaultValue={job.type ?? ""} aria-label={`Type, ${job.jobName}`}>
+                  <td className="whitespace-nowrap px-2 py-1.5 text-center text-[10px] text-sdc-gray-600">
+                    <select name={`jobField__${job.id}__type`} defaultValue={job.type ?? ""} aria-label={`Type, ${job.jobName}`} className="text-center">
                       {job.type == null && <option value="">—</option>}
                       {VALID_JOB_TYPES.map((t) => (
                         <option key={t} value={t}>
@@ -279,7 +355,7 @@ export default async function QuotedPage({
                       ))}
                     </select>
                   </td>
-                  <td className="whitespace-nowrap px-2 py-1.5 text-xs">
+                  <td className="whitespace-nowrap px-2 py-1.5 text-center text-[10px]">
                     {isSdc ? (
                       <span className="text-sdc-gray-500" aria-label={`Billable, ${job.jobName}`} title="SDC's own projects are always non-billable">
                         Non-Billable
@@ -289,7 +365,7 @@ export default async function QuotedPage({
                         name={`jobField__${job.id}__billable`}
                         defaultValue={job.billable ? "Billable" : "Non-Billable"}
                         aria-label={`Billable, ${job.jobName}`}
-                        className={job.billable ? "text-sdc-green-text" : "text-sdc-gray-500"}
+                        className={`text-center ${job.billable ? "text-sdc-green-text" : "text-sdc-gray-500"}`}
                       >
                         <option value="Billable">Billable</option>
                         <option value="Non-Billable">Non-Billable</option>
@@ -297,11 +373,16 @@ export default async function QuotedPage({
                     )}
                   </td>
                   <td
-                    className={`whitespace-nowrap px-2 py-1.5 text-xs font-medium ${
+                    className={`whitespace-nowrap px-2 py-1.5 text-center text-[10px] font-medium ${
                       job.status === "Complete" ? "text-sdc-green-text" : "text-sdc-blue-dark"
                     }`}
                   >
-                    <select name={`jobField__${job.id}__status`} defaultValue={job.status} aria-label={`Status, ${job.jobName}`}>
+                    <select
+                      name={`jobField__${job.id}__status`}
+                      defaultValue={job.status}
+                      aria-label={`Status, ${job.jobName}`}
+                      className="text-center"
+                    >
                       {allStatuses.map((st) => (
                         <option key={st} value={st}>
                           {st}
@@ -309,14 +390,14 @@ export default async function QuotedPage({
                       ))}
                     </select>
                   </td>
-                  <td className="whitespace-nowrap px-2 py-1.5 text-xs text-sdc-gray-500">
+                  <td className="whitespace-nowrap px-2 py-1.5 text-center text-[10px] text-sdc-gray-500">
                     <DateCell
                       name={`jobField__${job.id}__startDate`}
                       defaultValue={dateInputValue(job.startDate)}
                       ariaLabel={`Start Date, ${job.jobName}`}
                     />
                   </td>
-                  <td className="whitespace-nowrap px-2 py-1.5 text-xs text-sdc-gray-500">
+                  <td className="whitespace-nowrap px-2 py-1.5 text-center text-[10px] text-sdc-gray-500">
                     <DateCell
                       name={`jobField__${job.id}__completeDate`}
                       defaultValue={dateInputValue(job.completeDate)}
@@ -329,7 +410,7 @@ export default async function QuotedPage({
                     const total = allSections.reduce((sum, s) => sum + Number(hoursBySection.get(s.code) ?? 0), 0);
                     if (!visibleSections.length) {
                       return (
-                        <td key={g.phase} className="border-l border-sdc-border px-1 py-1.5 text-right font-mono text-xs text-sdc-gray-600">
+                        <td key={g.phase} className="border-l border-sdc-border px-1 py-1.5 text-center font-mono text-[10px] text-sdc-gray-600">
                           {wholeHours(total)}
                         </td>
                       );
@@ -339,7 +420,7 @@ export default async function QuotedPage({
                         {visibleSections.map((s) => {
                           const hours = hoursBySection.get(s.code);
                           return (
-                            <td key={s.code} className="border-l border-sdc-border px-1 py-1.5 text-right font-mono text-xs text-sdc-gray-600">
+                            <td key={s.code} className="border-l border-sdc-border px-1 py-1.5 text-center font-mono text-[10px] text-sdc-gray-600">
                               <input
                                 type="number"
                                 step="1"
@@ -348,19 +429,19 @@ export default async function QuotedPage({
                                 defaultValue={hours != null ? Math.round(Number(hours)).toString() : ""}
                                 placeholder="—"
                                 aria-label={`Quoted hours, ${job.jobName}, ${s.name}`}
-                                className="text-right"
+                                className="text-center"
                               />
                             </td>
                           );
                         })}
-                        <td className="border-l border-sdc-border bg-sdc-blue-light px-1 py-1.5 text-right font-mono text-xs font-medium text-sdc-navy">
+                        <td className="border-l border-sdc-border bg-sdc-blue-light px-1 py-1.5 text-center font-mono text-[10px] font-medium text-sdc-navy">
                           {wholeHours(total)}
                         </td>
                       </Fragment>
                     );
                   })}
-                  <td className={`sticky right-[84px] z-10 whitespace-nowrap border-l border-sdc-border px-2 py-1.5 text-right text-xs font-medium text-sdc-navy ${zebraSticky}`}>
-                    <div className="flex items-center justify-end gap-0.5">
+                  <td className={`sticky right-[90px] z-10 whitespace-nowrap border-l border-sdc-border px-2 py-1.5 text-center text-[10px] font-medium text-sdc-navy ${zebraSticky}`}>
+                    <div className="flex items-center justify-center gap-0.5">
                       <span className="text-sdc-gray-400">$</span>
                       <input
                         type="number"
@@ -370,12 +451,12 @@ export default async function QuotedPage({
                         defaultValue={job.costQuoted != null ? Number(job.costQuoted).toString() : ""}
                         placeholder="—"
                         aria-label={`Cost Quoted, ${job.jobName}`}
-                        className="w-full min-w-0 border-none bg-transparent text-right outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        className="w-full min-w-0 border-none bg-transparent text-center outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                       />
                     </div>
                   </td>
-                  <td className={`sticky right-0 z-10 whitespace-nowrap px-2 py-1.5 text-right text-xs text-sdc-gray-600 ${zebraSticky}`}>
-                    <div className="flex items-center justify-end gap-0.5">
+                  <td className={`sticky right-0 z-10 whitespace-nowrap px-2 py-1.5 text-center text-[10px] text-sdc-gray-600 ${zebraSticky}`}>
+                    <div className="flex items-center justify-center gap-0.5">
                       <span className="text-sdc-gray-400">$</span>
                       <input
                         type="number"
@@ -385,7 +466,7 @@ export default async function QuotedPage({
                         defaultValue={job.costActualHistorical != null ? Number(job.costActualHistorical).toString() : ""}
                         placeholder="—"
                         aria-label={`Cost Actual, ${job.jobName}`}
-                        className="w-full min-w-0 border-none bg-transparent text-right outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        className="w-full min-w-0 border-none bg-transparent text-center outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                       />
                     </div>
                   </td>

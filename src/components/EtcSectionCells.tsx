@@ -52,7 +52,7 @@ export function EtcSectionCells({
   initialConfirmed: number | null;
   locked: boolean;
 }) {
-  const [workedText, setWorkedText] = useState(String(initialWorked));
+  const [workedText, setWorkedText] = useState(wholeNum(initialWorked));
   const [newEtcText, setNewEtcText] = useState(
     initialDraft != null
       ? String(initialDraft)
@@ -108,27 +108,27 @@ export function EtcSectionCells({
 
   return (
     <>
-      <td className={`${edge} bg-[#5E91D3] px-1 py-1 text-right text-xs text-sdc-gray-700`}>{wholeNum(priorEtc)}</td>
-      <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1`}>
-        {/* Raw (round2) value, NOT wholeNum — the input's value is what
-            submitMonth writes back, so a rounded value would permanently
-            degrade Power BI's decimal hours on every submit. */}
+      <td className={`${edge} bg-[#5E91D3] px-1 py-1 text-center text-[10px] text-sdc-gray-700`}>{wholeNum(priorEtc)}</td>
+      <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1 text-center`}>
+        {/* Rounded to a whole number for display — this IS what submitMonth
+            writes back, so any sub-hour precision Power BI supplied is lost
+            once a manager submits without editing this cell. */}
         <input
           type="number"
-          step="0.01"
+          step="1"
           min="0"
           name={`hoursWorked__${entryId}`}
           value={workedText}
           onChange={handleWorkedChange}
           disabled={locked}
           aria-label={`Hours worked, ${jobName}, ${sectionName}`}
-          className="w-12 rounded-md border border-transparent bg-transparent px-1.5 py-1 text-right text-xs outline-none focus:border-sdc-blue focus:bg-white focus:shadow-sm disabled:text-sdc-gray-400"
+          className="w-12 rounded-md border border-transparent bg-transparent px-1.5 py-1 text-center text-[10px] outline-none focus:border-sdc-blue focus:bg-white focus:shadow-sm disabled:text-sdc-gray-400"
         />
       </td>
-      <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-1 py-1 text-right text-xs text-sdc-gray-500`}>
+      <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-1 py-1 text-center text-[10px] text-sdc-gray-500`}>
         {wholeNum(hoursLeft)}
       </td>
-      <td className={`border-l border-sdc-border ${newEtcBg(decided)} px-1 py-1`}>
+      <td className={`border-l border-sdc-border ${newEtcBg(decided)} px-1 py-1 text-center`}>
         {/* No hours worked -> carry-forward is deterministic, safe to auto-fill.
             Hours worked > 0 -> a manager's judgment call, not auto-filled;
             flagged yellow so it's obviously not done yet. Typed values
@@ -144,12 +144,12 @@ export function EtcSectionCells({
           placeholder={decided ? undefined : wholeNum(suggested)}
           disabled={locked}
           aria-label={`New ETC override, ${jobName}, ${sectionName}`}
-          className={`w-12 [appearance:textfield] rounded-md border-none bg-transparent px-1.5 py-1 text-right text-xs outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none focus:bg-white focus:shadow-sm ${
+          className={`w-12 [appearance:textfield] rounded-md border-none bg-transparent px-1.5 py-1 text-center text-[10px] outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none focus:bg-white focus:shadow-sm ${
             decided ? "text-sdc-gray-600" : "text-sdc-yellow-text placeholder:text-sdc-yellow-text/60"
           }`}
         />
       </td>
-      <td className={`border-l border-sdc-border ${diffBg(diff)} px-1 py-1 text-right text-xs text-sdc-gray-700`}>
+      <td className={`border-l border-sdc-border ${diffBg(diff)} px-1 py-1 text-center text-[10px] text-sdc-gray-700`}>
         {wholeNum(diff)}
       </td>
     </>

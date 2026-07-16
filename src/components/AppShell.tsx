@@ -1,6 +1,7 @@
 import Sidebar from "@/components/Sidebar";
 import ExcelCellFocus from "@/components/ExcelCellFocus";
 import RowSelect from "@/components/RowSelect";
+import ColumnResize from "@/components/ColumnResize";
 
 export default function AppShell({
   children,
@@ -19,6 +20,7 @@ export default function AppShell({
       <main className="min-w-0 flex-1 bg-background">{children}</main>
       <ExcelCellFocus />
       <RowSelect />
+      <ColumnResize />
     </div>
   );
 }

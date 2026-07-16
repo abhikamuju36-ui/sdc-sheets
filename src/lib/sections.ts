@@ -1,26 +1,29 @@
-// Fixed section-code column order and names, confirmed from the "Estimated Hours",
-// "Function Hierarchy", and "Function Department" tabs of Project Planner Data
-// Control.xlsx. Code = {phase}-{function}; phase groups the columns, function names
-// them within the group. Shared by the Quoted page and the Monthly ETC grid so both
-// use the identical column layout.
-export const SECTIONS: { code: string; name: string; phase: string }[] = [
-  { code: "10-111", name: "PM", phase: "Complete Design & Build" },
-  { code: "10-211", name: "ME General", phase: "Complete Design & Build" },
-  { code: "10-312", name: "CE Design & Drawings", phase: "Complete Design & Build" },
-  { code: "10-313", name: "CE Software", phase: "Complete Design & Build" },
-  { code: "10-515", name: "HMI", phase: "Complete Design & Build" },
-  { code: "10-516", name: "Robot", phase: "Complete Design & Build" },
-  { code: "10-517", name: "Vision", phase: "Complete Design & Build" },
-  { code: "10-518", name: "Database & Device", phase: "Complete Design & Build" },
-  { code: "10-411", name: "Mechanical Build", phase: "Complete Design & Build" },
-  { code: "10-412", name: "Electrical Build", phase: "Complete Design & Build" },
-  { code: "10-413", name: "Manufacturing", phase: "Complete Design & Build" },
-  { code: "40-211", name: "Engineering", phase: "Machine Testing" },
-  { code: "40-411", name: "Shop", phase: "Machine Testing" },
-  { code: "50-211", name: "Engineering", phase: "Teardown & Install" },
-  { code: "50-411", name: "Shop", phase: "Teardown & Install" },
-  { code: "70-211", name: "Engineering", phase: "Warranty" },
-  { code: "70-411", name: "Shop", phase: "Warranty" },
+// Fixed section-code column order and names, confirmed directly against the
+// "Estimated Hours" tab of Project Planner Data Control.xlsx (rows 2-7: phase,
+// section id, Function Group, Function Name, function id, full code). `group`
+// is that sheet's "Function Group" department band — a header level between
+// phase and section name (PM / ME / CE / General Engineering / Shop, and
+// Engineering / Shop again for the Machine Testing/Teardown/Warranty blocks,
+// which have no per-department breakdown). Shared by the Quoted page and the
+// Monthly ETC grid so both use the identical column layout.
+export const SECTIONS: { code: string; name: string; phase: string; group: string }[] = [
+  { code: "10-111", name: "PM", phase: "Complete Design & Build", group: "PM" },
+  { code: "10-211", name: "ME General", phase: "Complete Design & Build", group: "ME" },
+  { code: "10-312", name: "Design & Drawings", phase: "Complete Design & Build", group: "CE" },
+  { code: "10-313", name: "Software", phase: "Complete Design & Build", group: "CE" },
+  { code: "10-515", name: "HMI", phase: "Complete Design & Build", group: "General Engineering" },
+  { code: "10-516", name: "Robot", phase: "Complete Design & Build", group: "General Engineering" },
+  { code: "10-517", name: "Vision", phase: "Complete Design & Build", group: "General Engineering" },
+  { code: "10-518", name: "Database & Device", phase: "Complete Design & Build", group: "General Engineering" },
+  { code: "10-411", name: "Mechanical Build", phase: "Complete Design & Build", group: "Shop" },
+  { code: "10-412", name: "Electrical Build", phase: "Complete Design & Build", group: "Shop" },
+  { code: "10-413", name: "Manufacturing", phase: "Complete Design & Build", group: "Shop" },
+  { code: "40-211", name: "ME & CE", phase: "Machine Testing", group: "Engineering" },
+  { code: "40-411", name: "MB & EB", phase: "Machine Testing", group: "Shop" },
+  { code: "50-211", name: "ME & CE", phase: "Teardown & Install", group: "Engineering" },
+  { code: "50-411", name: "MB & EB", phase: "Teardown & Install", group: "Shop" },
+  { code: "70-211", name: "ME & CE", phase: "Warranty", group: "Engineering" },
+  { code: "70-411", name: "MB & EB", phase: "Warranty", group: "Shop" },
 ];
 
 // Consecutive runs of the same phase, for a grouped header row's colSpans.

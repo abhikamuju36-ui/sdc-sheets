@@ -331,41 +331,41 @@ export default async function JobDetailPage({
                 <tbody>
                   {monthlyActualHours.map((m, i) => (
                     <tr key={m.id} className={i % 2 === 1 ? "bg-sdc-gray-50/60" : ""}>
-                      <td className="px-4 py-2 font-medium text-sdc-navy align-top">{m.month}</td>
-                      <td className="px-4 py-2 align-top">
+                      <td className="px-4 py-2 text-center text-[10px] font-medium text-sdc-navy align-top">{m.month}</td>
+                      <td className="px-4 py-2 text-center text-[10px] align-top">
                         {m.actualHours.toString()}
                         {m.overridden && (
                           <span className="ml-2 rounded-full bg-sdc-yellow-bg px-2 py-0.5 text-[10px] font-medium text-sdc-yellow-text">
                             Overridden
                           </span>
                         )}
-                        {m.overriddenNote && <p className="mt-0.5 text-[11px] text-sdc-gray-400">{m.overriddenNote}</p>}
+                        {m.overriddenNote && <p className="mt-0.5 text-[10px] text-sdc-gray-400">{m.overriddenNote}</p>}
                       </td>
-                      <td className="px-4 py-2 align-top">
+                      <td className="px-4 py-2 text-center text-[10px] align-top">
                         {m.overridden ? (
                           <form action={revertOverride}>
                             <input type="hidden" name="rowId" value={m.id} />
-                            <button type="submit" className="text-xs text-sdc-gray-500 underline hover:text-sdc-navy">
+                            <button type="submit" className="text-[10px] text-sdc-gray-500 underline hover:text-sdc-navy">
                               Revert to Power BI
                             </button>
                           </form>
                         ) : (
-                          <form action={overrideMonthlyActualHours} className="flex items-center gap-1.5">
+                          <form action={overrideMonthlyActualHours} className="flex items-center justify-center gap-1.5">
                             <input type="hidden" name="rowId" value={m.id} />
                             <input
                               type="number"
                               step="0.01"
                               name="newHours"
                               defaultValue={m.actualHours.toString()}
-                              className={`${INPUT} w-24 py-1 text-xs`}
+                              className={`${INPUT} w-24 py-1 text-[10px]`}
                             />
                             <input
                               type="text"
                               name="note"
                               placeholder="Reason (optional)"
-                              className={`${INPUT} w-36 py-1 text-xs`}
+                              className={`${INPUT} w-36 py-1 text-[10px]`}
                             />
-                            <button type="submit" className={`${BUTTON_PRIMARY} px-2.5 py-1 text-xs`}>
+                            <button type="submit" className={`${BUTTON_PRIMARY} px-2.5 py-1 text-[10px]`}>
                               Override
                             </button>
                           </form>
@@ -394,18 +394,18 @@ export default async function JobDetailPage({
                 <thead>
                   <tr className={TABLE_HEADER_ROW}>
                     <th className="px-4 py-3">Section</th>
-                    <th className="px-4 py-3 text-right">Quoted</th>
-                    <th className="px-4 py-3 text-right">Actual Historical</th>
-                    <th className="px-4 py-3 text-right">Estimate to Complete</th>
+                    <th className="px-4 py-3 text-center">Quoted</th>
+                    <th className="px-4 py-3 text-center">Actual Historical</th>
+                    <th className="px-4 py-3 text-center">Estimate to Complete</th>
                   </tr>
                 </thead>
                 <tbody>
                   {estimatedHours.map((eh, i) => (
                     <tr key={eh.id} className={i % 2 === 1 ? "bg-sdc-gray-50/60" : ""}>
-                      <td className="px-4 py-2 font-medium text-sdc-navy">{eh.section}</td>
-                      <td className="px-4 py-2 text-right">{eh.quotedHours.toString()}</td>
-                      <td className="px-4 py-2 text-right">{eh.actualHistoricalHours.toString()}</td>
-                      <td className="px-4 py-2 text-right">{eh.estimateToCompleteHours.toString()}</td>
+                      <td className="px-4 py-2 text-center text-[10px] font-medium text-sdc-navy">{eh.section}</td>
+                      <td className="px-4 py-2 text-center text-[10px]">{eh.quotedHours.toString()}</td>
+                      <td className="px-4 py-2 text-center text-[10px]">{eh.actualHistoricalHours.toString()}</td>
+                      <td className="px-4 py-2 text-center text-[10px]">{eh.estimateToCompleteHours.toString()}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -429,23 +429,23 @@ export default async function JobDetailPage({
                 <tr className={TABLE_HEADER_ROW}>
                   <th className="px-4 py-3">Task / Person</th>
                   <th className="px-4 py-3">Estimate to Complete (hrs)</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
+                  <th className="px-4 py-3 text-center">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {tasks.map((t, i) => (
                   <tr key={t.id} className={i % 2 === 1 ? "bg-sdc-gray-50/60" : ""}>
-                    <td className="px-4 py-2">
+                    <td className="px-4 py-2 text-center">
                       <input
                         name="taskName"
                         defaultValue={t.taskName}
                         required
                         form={`task-${t.id}`}
-                        className={`${INPUT} w-full px-2 py-1 text-xs font-medium`}
+                        className={`${INPUT} w-full px-2 py-1 text-center text-[10px] font-medium`}
                         aria-label={`Task name, slot ${t.slot}`}
                       />
                     </td>
-                    <td className="px-4 py-2">
+                    <td className="px-4 py-2 text-center">
                       <input
                         name="hours"
                         type="number"
@@ -453,16 +453,16 @@ export default async function JobDetailPage({
                         min="0"
                         defaultValue={t.estimateToCompleteHours.toString()}
                         form={`task-${t.id}`}
-                        className={`${INPUT} w-28 px-2 py-1 text-right text-xs`}
+                        className={`${INPUT} w-28 px-2 py-1 text-center text-[10px]`}
                         aria-label={`Hours, slot ${t.slot}`}
                       />
                     </td>
-                    <td className="px-4 py-2 text-right">
-                      <div className="flex justify-end gap-2">
-                        <button type="submit" form={`task-${t.id}`} className={`${BUTTON_SECONDARY} px-2.5 py-1 text-xs`}>
+                    <td className="px-4 py-2 text-center">
+                      <div className="flex justify-center gap-2">
+                        <button type="submit" form={`task-${t.id}`} className={`${BUTTON_SECONDARY} px-2.5 py-1 text-[10px]`}>
                           Save
                         </button>
-                        <button type="submit" form={`task-del-${t.id}`} className={`${BUTTON_SECONDARY} px-2.5 py-1 text-xs text-red-700`}>
+                        <button type="submit" form={`task-del-${t.id}`} className={`${BUTTON_SECONDARY} px-2.5 py-1 text-[10px] text-red-700`}>
                           Delete
                         </button>
                       </div>
@@ -471,7 +471,7 @@ export default async function JobDetailPage({
                 ))}
                 {tasks.length === 0 && (
                   <tr>
-                    <td colSpan={3} className="px-4 py-5 text-sdc-gray-400">
+                    <td colSpan={3} className="px-4 py-5 text-center text-[10px] text-sdc-gray-400">
                       No task assignments for this job yet — add one below.
                     </td>
                   </tr>

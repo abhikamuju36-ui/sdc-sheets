@@ -24,7 +24,7 @@ export function RunReportButton({ children, className }: { children: React.React
   return (
     <>
       <button type="submit" className={className} disabled={pending}>
-        {pending ? "Running…" : children}
+        {pending ? "Refreshing…" : children}
       </button>
       {showToast && (
         <div

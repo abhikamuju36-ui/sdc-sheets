@@ -21,7 +21,7 @@ export const LABEL = "text-[13px] font-semibold text-sdc-navy";
 // Bottom-border only, no flat gray fill band — reads closer to a considered
 // spreadsheet/ledger header than a generic admin-template table.
 export const TABLE_HEADER_ROW =
-  "border-b-2 border-sdc-border text-left text-[11px] font-semibold uppercase tracking-wider text-sdc-gray-600";
+  "border-b-2 border-sdc-border text-center text-[10px] font-semibold uppercase tracking-wider text-sdc-gray-600";
 
 export const TABLE_ROW_HOVER = "transition-colors hover:bg-sdc-blue-light/40";
 
