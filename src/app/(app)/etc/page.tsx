@@ -660,7 +660,21 @@ export default async function MonthlyEtcPage({
                   <th rowSpan={5} className="sticky left-10 z-10 w-20 min-w-20 bg-sdc-gray-100 px-3 py-3 align-bottom">
                     Job Id
                   </th>
-                  <th rowSpan={5} className="sticky left-[120px] z-10 bg-sdc-gray-100 px-3 py-3 align-bottom">Job Name</th>
+                  <th
+                    rowSpan={5}
+                    style={{ width: "var(--etc-job-col-width, 260px)", minWidth: "var(--etc-job-col-width, 260px)" }}
+                    className="sticky left-[120px] z-10 bg-sdc-gray-100 px-3 py-3 align-bottom"
+                  >
+                    Job Name
+                    <div
+                      className="col-resize-handle absolute right-0 inset-y-0 z-10 w-3"
+                      data-resize-var="--etc-job-col-width"
+                      data-resize-min="150"
+                      data-resize-max="600"
+                      title="Drag to resize"
+                      style={{ touchAction: "none" }}
+                    />
+                  </th>
                   {headerRuns(visibleCols, (c) => c.phaseLabel, (c) => c.phaseLabel).map((p, i) => (
                     <th key={p.key + i} colSpan={p.count * SUB_COLUMNS.length} className={`${i === 0 ? "border-l border-sdc-border" : PHASE_EDGE} px-3 py-1.5 text-center`}>
                       {p.label}
@@ -838,7 +852,8 @@ export default async function MonthlyEtcPage({
                       <td className={`sticky left-0 z-10 w-10 min-w-10 px-2 py-1 text-center text-sdc-gray-400 ${zebraSticky}`}>{jobIndex + 1}</td>
                       <td className={`sticky left-10 z-10 w-20 min-w-20 px-3 py-1 text-center font-mono text-sdc-gray-400 ${zebraSticky}`}>{job.jobId}</td>
                       <td
-                        className={`sticky left-[120px] z-10 min-w-[260px] whitespace-nowrap px-3 py-1 text-center font-medium text-sdc-navy ${zebraSticky}`}
+                        style={{ width: "var(--etc-job-col-width, 260px)", minWidth: "var(--etc-job-col-width, 260px)" }}
+                        className={`sticky left-[120px] z-10 truncate px-3 py-1 text-center font-medium text-sdc-navy ${zebraSticky}`}
                         title={job.jobName}
                       >
                         {job.jobName}

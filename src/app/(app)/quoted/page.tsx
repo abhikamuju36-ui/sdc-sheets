@@ -197,7 +197,7 @@ export default async function QuotedPage({
               >
                 Job
                 <div
-                  className="col-resize-handle absolute -right-1 inset-y-0 z-30 w-2.5"
+                  className="col-resize-handle absolute right-0 inset-y-0 z-10 w-3"
                   data-resize-var="--job-col-width"
                   data-resize-min="160"
                   data-resize-max="640"
