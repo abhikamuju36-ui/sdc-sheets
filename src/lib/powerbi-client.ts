@@ -16,11 +16,50 @@ const CACHE_PATH = path.join(os.homedir(), "AppData", "Local", "SdcPowerBiMcp", 
 const PBI_GROUP_ID = process.env.PBI_WORKSPACE_ID;
 const PBI_DATASET_ID = process.env.PBI_DATASET_ID;
 
+// The on-disk MSAL cache at CACHE_PATH is shared by every process that talks
+// to Power BI on this machine — this app's dev/prod server plus any one-off
+// script (scripts/*.ts all import this module directly). @azure/msal-node-
+// extensions serializes access with a companion .lockfile, but two of its
+// failure paths have no retry of their own and surface as hard errors on a
+// transient collision instead of settling on their own:
+//   - CrossPlatformLock.unlock() straight-up throws on a Windows EBUSY when
+//     it can't unlink the lockfile because another process's handle to it
+//     hasn't closed yet (confirmed live 2026-07-17: a verification script
+//     and a browser-triggered Sync History both hit the cache within ~1s of
+//     each other and this fired).
+//   - PersistenceCreator.createPersistence()'s own verification step (write
+//     a probe value, read it back) can read back a DIFFERENT process's probe
+//     under concurrent first-use, throwing CachePersistenceError (reproduced
+//     directly: 6 processes starting at once, most bursts saw several fail
+//     this way).
+// Both are `PersistenceError` instances (@azure/msal-node-extensions doesn't
+// export the class, hence the duck-typed check) representing transient
+// shared-file contention, not a real auth/config problem — safe to retry.
+function isTransientPersistenceError(err: unknown): boolean {
+  return err instanceof Error && err.name === "PersistenceError";
+}
+
+async function withCacheContentionRetry<T>(fn: () => Promise<T>, attempts = 5, delayMs = 300): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (!isTransientPersistenceError(err) || attempt >= attempts) throw err;
+      await new Promise((resolve) => setTimeout(resolve, delayMs * attempt));
+    }
+  }
+}
+
 let pcaPromise: Promise<PublicClientApplication> | null = null;
 
 async function getPca(): Promise<PublicClientApplication> {
   if (!pcaPromise) {
-    pcaPromise = (async () => {
+    // Assigned before the async work settles, so a rejection has to clear
+    // this back to null itself — otherwise every later call in this process
+    // just re-awaits the same permanently-rejected promise forever (confirmed
+    // live: one transient CachePersistenceError at startup, and Power BI sync
+    // stayed broken for the rest of the process's life until restarted).
+    pcaPromise = withCacheContentionRetry(async () => {
       const persistence = await PersistenceCreator.createPersistence({
         cachePath: CACHE_PATH,
         dataProtectionScope: DataProtectionScope.CurrentUser,
@@ -32,7 +71,10 @@ async function getPca(): Promise<PublicClientApplication> {
         auth: { clientId: CLIENT_ID, authority: "https://login.microsoftonline.com/organizations" },
         cache: { cachePlugin: new PersistenceCachePlugin(persistence) },
       });
-    })();
+    }).catch((err) => {
+      pcaPromise = null;
+      throw err;
+    });
   }
   return pcaPromise;
 }
@@ -50,8 +92,8 @@ async function getAccount(pca: PublicClientApplication): Promise<AccountInfo> {
 
 async function getAccessToken(): Promise<string> {
   const pca = await getPca();
-  const account = await getAccount(pca);
-  const result = await pca.acquireTokenSilent({ account, scopes: SCOPES });
+  const account = await withCacheContentionRetry(() => getAccount(pca));
+  const result = await withCacheContentionRetry(() => pca.acquireTokenSilent({ account, scopes: SCOPES }));
   if (!result) throw new Error("Failed to acquire Power BI access token silently.");
   return result.accessToken;
 }

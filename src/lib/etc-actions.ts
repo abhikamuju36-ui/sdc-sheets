@@ -408,22 +408,47 @@ export async function syncPowerBiForEtc(month: string, _formData: FormData) {
   revalidatePath("/");
 }
 
+export type SyncHistoryResult = {
+  monthsRefreshed: number;
+  reconciledMonths: string[];
+  entriesReconciled: number;
+  poolEntriesReconciled: number;
+};
+
 // Re-pulls every Power BI-owned historical month from the "ETC Historical *"
 // measures so past months always match the source report. Months with real
 // in-app work (submitted / mid-edit / in progress) are never touched — the
-// app is the source of truth for those. Safe to run any time.
-export async function syncEtcHistory(_formData: FormData) {
+// app is the source of truth for those. For an app-owned month Power BI has
+// since published an archive for, only its display-only fact fields (Hours
+// Worked/Prior ETC on EtcEntry; Previous Pulled/New Added/Available/Worked
+// on CategoryPool) are reconciled — every submitted decision (New ETC,
+// hoursPulledThisMonth, rate, and the frozen dollar figures derived from
+// them) is left exactly as the manager submitted it. Safe to run any time.
+//
+// Takes/returns the (state, formData) shape useActionState expects — see
+// SyncHistoryButton, which surfaces this result as a toast instead of the
+// reconciliation only being visible in the audit log.
+export async function syncEtcHistory(_prevState: SyncHistoryResult | null, _formData: FormData): Promise<SyncHistoryResult> {
   const result = await syncEtcHistoryFromPowerBi();
-  const staleMonths = [...new Set([...result.monthsOwnedWithPbiHistoryNow, ...result.poolMonthsOwnedWithPbiHistoryNow])];
-  const staleWarning = staleMonths.length > 0 ? ` — WARNING: possibly stale: ${staleMonths.join(", ")}` : "";
+  const reconciledMonths = [...new Set([...result.monthsOwnedWithPbiHistoryNow, ...result.poolMonthsOwnedWithPbiHistoryNow])];
+  const reconciledNote =
+    reconciledMonths.length > 0
+      ? ` — reconciled display fields for locked month(s) now published by Power BI: ${reconciledMonths.join(", ")} (${result.entriesReconciled} EtcEntry + ${result.poolEntriesReconciled} pool fields updated; all submitted decisions/dollars untouched)`
+      : "";
   await logAudit({
     action: "etc.syncEtcHistory",
     entityType: "EtcMonth",
-    summary: `Refreshed ${result.monthsRefreshed.length} historical ETC months from Power BI (${result.entriesWritten} rows)${staleWarning}`,
+    summary: `Refreshed ${result.monthsRefreshed.length} historical ETC months from Power BI (${result.entriesWritten} rows)${reconciledNote}`,
     metadata: result,
   });
   revalidatePath("/etc");
   revalidatePath("/");
+  return {
+    monthsRefreshed: result.monthsRefreshed.length,
+    reconciledMonths,
+    entriesReconciled: result.entriesReconciled,
+    poolEntriesReconciled: result.poolEntriesReconciled,
+  };
 }
 
 // Parity with the original sheet's "Clear ETC" script, which blanked only the

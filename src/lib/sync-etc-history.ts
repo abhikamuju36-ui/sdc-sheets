@@ -52,10 +52,12 @@ export async function syncEtcHistoryFromPowerBi(): Promise<{
   monthsSkippedAppOwned: string[];
   monthsOwnedWithPbiHistoryNow: string[];
   entriesWritten: number;
+  entriesReconciled: number;
   unsubmittedFilled: number;
   poolMonthsRefreshed: string[];
   poolRowsWritten: number;
   poolMonthsOwnedWithPbiHistoryNow: string[];
+  poolEntriesReconciled: number;
 }> {
   const periods = (await runDax(`EVALUATE 'Estimated to Complete Period'`)) as {
     "Estimated to Complete Period[ETC Name]": string;
@@ -84,24 +86,90 @@ export async function syncEtcHistoryFromPowerBi(): Promise<{
   const monthsSkippedAppOwned: string[] = [];
   const monthsOwnedWithPbiHistoryNow: string[] = [];
   let entriesWritten = 0;
+  let entriesReconciled = 0;
   let unsubmittedFilled = 0;
 
   for (const period of candidates) {
     if (appOwned.has(period.month)) {
       monthsSkippedAppOwned.push(period.month);
-      // Existence check: has Power BI's archive shown up for this month
-      // since it was locked in the app? If so, the app's numbers may be
-      // stale/wrong (see the gap noted above) — flag it rather than
-      // silently trusting whatever is already stored.
-      const historyRows = (await runDax(`
-        EVALUATE
-        SUMMARIZECOLUMNS(
-          'Job'[Job Id],
-          FILTER(ALL('Estimated to Complete Period'), 'Estimated to Complete Period'[ETC Name] = "${period.name}"),
-          "NewEtc", [ETC Historical Hours]
-        )
-      `)) as { "Job[Job Id]": string; NewEtc: number | null }[];
-      if (hasPublishedHistory(historyRows)) monthsOwnedWithPbiHistoryNow.push(period.month);
+      // Has Power BI's archive shown up for this month since it was locked
+      // in the app? If so, reconcile the display-only fields (Prior ETC /
+      // Hours Worked / Hours Left) against it — these don't drive any dollar
+      // calculation (calcTotalEtcDollars uses New ETC only, confirmed
+      // against standard-fees.ts) — while leaving every real decision (New
+      // ETC, submittedAt, needsReview, newEtcDraft) exactly as the manager
+      // left it. Never inserts a row that doesn't already exist: a job/
+      // section PBI now reports that the locked month never had would
+      // change what's visible in a frozen month without review, so that
+      // case is left flagged for a human instead. See the June 2026
+      // data-correction incident and the 2026-07-17 April 2026 audit.
+      const [historyRows, historyCostRows] = await Promise.all([
+        runDax(`
+          EVALUATE
+          SUMMARIZECOLUMNS(
+            'Job'[Job Id], 'Function Hierarchy'[Section-Function Code],
+            FILTER(ALL('Estimated to Complete Period'), 'Estimated to Complete Period'[ETC Name] = "${period.name}"),
+            "PriorEtc", [ETC Historical Hours Prior Month],
+            "NewEtc", [ETC Historical Hours],
+            "Left", [ETC Historical Hours Left]
+          )
+        `) as Promise<
+          { "Job[Job Id]": string; "Function Hierarchy[Section-Function Code]": string; PriorEtc: number | null; NewEtc: number | null; Left: number | null }[]
+        >,
+        runDax(`
+          EVALUATE
+          SUMMARIZECOLUMNS(
+            'Job'[Job Id],
+            FILTER(ALL('Estimated to Complete Period'), 'Estimated to Complete Period'[ETC Name] = "${period.name}"),
+            "PriorEtc", [ETC Historical Costs Prior Month],
+            "NewEtc", [ETC Historical Costs],
+            "Left", [ETC Historical Costs Left]
+          )
+        `) as Promise<{ "Job[Job Id]": string; PriorEtc: number | null; NewEtc: number | null; Left: number | null }[]>,
+      ]);
+
+      if (!hasPublishedHistory(historyRows) && !hasPublishedHistory(historyCostRows)) continue;
+      monthsOwnedWithPbiHistoryNow.push(period.month);
+
+      const existingEntries = await prisma.etcEntry.findMany({ where: { month: period.month } });
+      const existingByKey = new Map(existingEntries.map((e) => [`${e.jobId}::${e.section}`, e]));
+
+      const reconcileRow = (rawJobId: string | null, section: string, r: { PriorEtc: number | null; Left: number | null }) => {
+        if (rawJobId == null) return null;
+        const job = jobByJobId.get(String(Number(rawJobId)));
+        if (!job) return null;
+        const existing = existingByKey.get(`${job.id}::${section}`);
+        if (!existing) return null;
+
+        const priorEtc = round2(r.PriorEtc ?? 0);
+        const left = round2(r.Left ?? 0);
+        const hoursWorked = round2(priorEtc - left);
+        if (Math.abs(Number(existing.priorEtc) - priorEtc) < 0.005 && Math.abs(Number(existing.hoursWorked) - hoursWorked) < 0.005) {
+          return null;
+        }
+        return { id: existing.id, priorEtc, hoursWorked, hoursLeftCalc: round2(calcHoursLeft(priorEtc, hoursWorked)) };
+      };
+
+      const updates: { id: number; priorEtc: number; hoursWorked: number; hoursLeftCalc: number }[] = [];
+      for (const r of historyRows) {
+        const section = r["Function Hierarchy[Section-Function Code]"];
+        if (section == null || !ETC_TRACKED_CODES.has(section)) continue;
+        const u = reconcileRow(r["Job[Job Id]"], section, r);
+        if (u) updates.push(u);
+      }
+      for (const r of historyCostRows) {
+        const u = reconcileRow(r["Job[Job Id]"], PARTS_COST_SECTION, r);
+        if (u) updates.push(u);
+      }
+
+      if (updates.length > 0) {
+        await prisma.$transaction(
+          updates.map((u) =>
+            prisma.etcEntry.update({ where: { id: u.id }, data: { priorEtc: u.priorEtc, hoursWorked: u.hoursWorked, hoursLeftCalc: u.hoursLeftCalc } })
+          )
+        );
+        entriesReconciled += updates.length;
+      }
       continue;
     }
 
@@ -199,7 +267,7 @@ export async function syncEtcHistoryFromPowerBi(): Promise<{
 
   const pools = await syncCategoryPoolHistory(new Map(candidates.map((p) => [p.name, p.month])), appOwned);
 
-  return { monthsRefreshed, monthsSkippedAppOwned, monthsOwnedWithPbiHistoryNow, entriesWritten, unsubmittedFilled, ...pools };
+  return { monthsRefreshed, monthsSkippedAppOwned, monthsOwnedWithPbiHistoryNow, entriesWritten, entriesReconciled, unsubmittedFilled, ...pools };
 }
 
 const POOL_CATEGORY: Record<string, "ENGINEERING_PM" | "ENGINEERING_WARRANTY" | "SHOP_MANUFACTURING" | "SHOP_WARRANTY"> = {
@@ -233,7 +301,7 @@ interface StandardFeesRow {
 async function syncCategoryPoolHistory(
   monthByPeriodName: Map<string, string>,
   etcAppOwned: Set<string>,
-): Promise<{ poolMonthsRefreshed: string[]; poolRowsWritten: number; poolMonthsOwnedWithPbiHistoryNow: string[] }> {
+): Promise<{ poolMonthsRefreshed: string[]; poolRowsWritten: number; poolMonthsOwnedWithPbiHistoryNow: string[]; poolEntriesReconciled: number }> {
   const [sfRows, periodKeyRows, snapshotMonths] = await Promise.all([
     runDax(`EVALUATE 'Standard Fees'`) as Promise<StandardFeesRow[]>,
     runDax(`
@@ -248,8 +316,8 @@ async function syncCategoryPoolHistory(
   // Same gap as the ETC ownership rule above: once a month has a
   // StandardSheetSnapshot (or app-owned EtcEntry), it's skipped here forever,
   // even after Power BI later publishes real 'Standard Fees' archive rows for
-  // it. Flag that case instead of silently trusting a frozen submission.
-  const { rowsByMonth, ownedWithHistoryNow: poolMonthsOwnedWithPbiHistoryNow } = groupStandardFeesRows(
+  // it. Reconciled below instead of silently trusting a frozen submission.
+  const { rowsByMonth, ownedWithHistoryNow: poolMonthsOwnedWithPbiHistoryNow, ownedRowsByMonth } = groupStandardFeesRows(
     sfRows,
     (r) => monthByKey.get(r["Standard Fees[ETC Period Key]"]),
     appOwnedPoolMonths
@@ -288,7 +356,46 @@ async function syncCategoryPoolHistory(
     poolRowsWritten += data.length;
   }
 
-  return { poolMonthsRefreshed, poolRowsWritten, poolMonthsOwnedWithPbiHistoryNow };
+  // Reconcile app-owned months Power BI now has an archive for — but only
+  // the pure Power-BI-fact fields (Previous Pulled / New Added / Available /
+  // Worked). hoursPulledThisMonth and rate are the manager's own decision,
+  // and newEtcHours/standardFee are the frozen dollar output derived from
+  // them at submit time (savePools in standard-sheet-actions.ts) — all four
+  // feed directly into that month's committed Standard Fees dollars
+  // (calcStandardFeeEngineering/Shop), so none of the four are ever
+  // recomputed or overwritten here, even though hoursAvailable moving means
+  // hoursAvailable may no longer arithmetically equal hoursPulledThisMonth +
+  // newEtcHours for a reconciled historical row — expected, not a bug: the
+  // dollar figure that was actually reviewed and submitted must never change.
+  let poolEntriesReconciled = 0;
+  for (const [month, rows] of ownedRowsByMonth) {
+    for (const r of rows) {
+      const category = POOL_CATEGORY[`${r["Standard Fees[Billing Group]"]}|${r["Standard Fees[Department]"]}`];
+      if (!category) continue;
+      const existing = await prisma.categoryPool.findUnique({ where: { category_month: { category: category as never, month } } });
+      if (!existing) continue; // never insert a new pool row into an app-owned month
+
+      const previousMonthPulledHours = round2(r["Standard Fees[Previous Month Pulled Hours]"] ?? 0);
+      const newHoursAddedThisMonth = round2(r["Standard Fees[New Hours Added this Month]"] ?? 0);
+      const hoursAvailable = round2(r["Standard Fees[Hours Available]"] ?? 0);
+      const hoursWorkedThisMonth = round2(r["Standard Fees[Hours Worked this Month]"] ?? 0);
+
+      const unchanged =
+        Math.abs(Number(existing.previousMonthPulledHours) - previousMonthPulledHours) < 0.005 &&
+        Math.abs(Number(existing.newHoursAddedThisMonth) - newHoursAddedThisMonth) < 0.005 &&
+        Math.abs(Number(existing.hoursAvailable) - hoursAvailable) < 0.005 &&
+        Math.abs(Number(existing.hoursWorkedThisMonth) - hoursWorkedThisMonth) < 0.005;
+      if (unchanged) continue;
+
+      await prisma.categoryPool.update({
+        where: { id: existing.id },
+        data: { previousMonthPulledHours, newHoursAddedThisMonth, hoursAvailable, hoursWorkedThisMonth },
+      });
+      poolEntriesReconciled++;
+    }
+  }
+
+  return { poolMonthsRefreshed, poolRowsWritten, poolMonthsOwnedWithPbiHistoryNow, poolEntriesReconciled };
 }
 
 const MONTH_NAME_TO_NUM: Record<string, string> = {

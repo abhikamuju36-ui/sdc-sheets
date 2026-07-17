@@ -18,9 +18,10 @@ import {
 } from "@/lib/standard-sheet-actions";
 import { ETC_SECTIONS, PARTS_COST_SECTION } from "@/lib/sections";
 import { calcHoursLeft, suggestNewEtc, isMonthLocked, isValidMonth, nextMonth, round2 } from "@/lib/etc";
-import { submitMonth, reopenMonth, syncPowerBiForEtc, syncEtcHistory } from "@/lib/etc-actions";
+import { submitMonth, reopenMonth, syncPowerBiForEtc } from "@/lib/etc-actions";
 import { RunReportButton } from "@/components/RunReportButton";
 import { SubmitAndLockButton } from "@/components/SubmitAndLockButton";
+import { SyncHistoryButton } from "@/components/SyncHistoryButton";
 import { isStandardSheetUnlocked, hadWrongPassword, unlockStandardSheet, lockStandardSheet } from "@/lib/standard-sheet-gate";
 import { getExecutionEtcByJob } from "@/lib/execution-etc";
 import { PageTitle } from "@/components/ui/Typography";
@@ -568,13 +569,7 @@ export default async function MonthlyEtcPage({
         )}
         {/* Maintenance-only: rewrites past months from Power BI. Admin-gated so
             it isn't part of the everyday manager toolbar. */}
-        {role === "ADMIN" && (
-          <form action={syncEtcHistory} title="Re-pull all past months from Power BI's ETC Historical measures. Months submitted in this app are never overwritten.">
-            <button type="submit" className={BUTTON_SECONDARY}>
-              Sync History
-            </button>
-          </form>
-        )}
+        {role === "ADMIN" && <SyncHistoryButton className={BUTTON_SECONDARY} />}
         {/* Password-gated Standard Sheet columns (Dan/Lisa only) — same
             unlock cookie as the /standard-sheet tab. */}
         {showStandards ? (

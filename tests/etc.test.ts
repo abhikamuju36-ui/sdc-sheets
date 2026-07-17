@@ -80,11 +80,16 @@ test("groupStandardFeesRows: routes owned-month rows to ownedWithHistoryNow inst
     { key: 4, month: "2026-06" }, // owned, archive present -> flagged (dedup across rows)
     { key: 5, month: "2026-06" },
   ];
-  const { rowsByMonth, ownedWithHistoryNow } = groupStandardFeesRows(rows, (r) => r.month, new Set(["2026-04", "2026-06"]));
+  const { rowsByMonth, ownedWithHistoryNow, ownedRowsByMonth } = groupStandardFeesRows(rows, (r) => r.month, new Set(["2026-04", "2026-06"]));
 
   assert.deepEqual(ownedWithHistoryNow, ["2026-04", "2026-06"]); // deduped, one entry per owned month
   assert.deepEqual([...rowsByMonth.keys()], ["2026-05"]); // owned months never make it into rowsByMonth
   assert.equal(rowsByMonth.get("2026-05")?.length, 1);
+  // owned rows aren't just flagged and discarded — they're preserved so the
+  // caller can reconcile their non-decision fact fields against Power BI.
+  assert.deepEqual([...ownedRowsByMonth.keys()].sort(), ["2026-04", "2026-06"]);
+  assert.equal(ownedRowsByMonth.get("2026-04")?.length, 2);
+  assert.equal(ownedRowsByMonth.get("2026-06")?.length, 2);
 });
 
 test("groupStandardFeesRows: an owned month with no Power BI rows at all is never flagged", () => {

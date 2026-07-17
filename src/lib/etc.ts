@@ -73,25 +73,29 @@ export function hasPublishedHistory(rows: { NewEtc: number | null }[]): boolean 
 // table, which reports existence via rows (a month with no archive yet
 // simply has no rows at all) rather than a nullable measure. Splits Power
 // BI's flat row list into per-month buckets, routing rows for an app-owned
-// month into `ownedWithHistoryNow` instead of `rowsByMonth` — so
-// syncCategoryPoolHistory can both skip overwriting it AND flag that real
-// data is now available, instead of silently doing neither.
+// month into `ownedRowsByMonth` (+ `ownedWithHistoryNow` for visibility)
+// instead of `rowsByMonth` — so syncCategoryPoolHistory can skip the normal
+// full-replace path for that month while still reconciling its non-decision
+// fact fields against the newly-available archive.
 export function groupStandardFeesRows<Row>(
   rows: Row[],
   monthForRow: (row: Row) => string | undefined,
   ownedMonths: Set<string>
-): { rowsByMonth: Map<string, Row[]>; ownedWithHistoryNow: string[] } {
+): { rowsByMonth: Map<string, Row[]>; ownedWithHistoryNow: string[]; ownedRowsByMonth: Map<string, Row[]> } {
   const rowsByMonth = new Map<string, Row[]>();
+  const ownedRowsByMonth = new Map<string, Row[]>();
   const ownedWithHistoryNow: string[] = [];
   for (const row of rows) {
     const month = monthForRow(row);
     if (!month) continue;
     if (ownedMonths.has(month)) {
       if (!ownedWithHistoryNow.includes(month)) ownedWithHistoryNow.push(month);
+      if (!ownedRowsByMonth.has(month)) ownedRowsByMonth.set(month, []);
+      ownedRowsByMonth.get(month)!.push(row);
       continue;
     }
     if (!rowsByMonth.has(month)) rowsByMonth.set(month, []);
     rowsByMonth.get(month)!.push(row);
   }
-  return { rowsByMonth, ownedWithHistoryNow };
+  return { rowsByMonth, ownedWithHistoryNow, ownedRowsByMonth };
 }

@@ -362,10 +362,13 @@ function monthToEtcName(month: string): string {
 // month — this filter used to do exactly that; fixed to match by name.
 //
 // Excel-free data flow (the workbook's Export-tab write-back loop is retired):
-// - Previous Month Pulled Hours = OUR OWN prior month's "Hours being pulled"
-//   (the Power BI measure only ever echoed back what Excel submitted; the app
-//   is the source of truth now). Power BI's value is used only as a fallback
-//   when no local prior-month row exists (e.g. the very first month).
+// - "Previous Month Pulled Hours" (misleading name) = OUR OWN prior month's
+//   NEW ETC HOURS — the remaining pool balance, not the pulled amount.
+//   Verified against the real 'Standard Fees' archive 2026-07-17: across all
+//   28 archived month-pairs, 22 match prior-month New ETC exactly and ZERO
+//   match prior-month Hours Pulled (the 6 outliers are small manual Excel
+//   tweaks). Power BI's own column is used only as a fallback when no local
+//   prior-month row exists (e.g. the very first month).
 // - New Hours Added (sold-job quotes) and Hours Worked (Paylocity) still come
 //   from Power BI — genuinely external data.
 // - "Hours being pulled this month" and "Rate" are manual decisions. Existing
@@ -399,9 +402,11 @@ export async function syncCategoryPoolsFromPowerBi(month: string): Promise<{ poo
     if (!category) continue;
 
     const prior = priorByCategory.get(category);
-    // App is the source of truth for the pulled-hours ledger; PBI's echo of
-    // the old Excel submissions is only a first-month fallback.
-    const previousMonthPulledHours = prior ? Number(prior.hoursPulledThisMonth) : row.PrevPulled ?? 0;
+    // The ledger chain carries the REMAINING POOL BALANCE forward: this
+    // month's starting hours = prior month's New ETC Hours (see the archive
+    // verification note above — NOT prior month's pulled hours, despite the
+    // column's name). PBI's echo is only a first-month fallback.
+    const previousMonthPulledHours = prior ? Number(prior.newEtcHours) : row.PrevPulled ?? 0;
     const newHoursAddedThisMonth = row.HoursQuoted ?? 0;
     const hoursWorkedThisMonth = row.HoursActual ?? 0;
     const hoursAvailable = round2(previousMonthPulledHours + newHoursAddedThisMonth);
