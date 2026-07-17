@@ -1,0 +1,685 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.9.0/schema.json",
+  "name": "3a5c5aa4c861d1b7c870",
+  "position": {
+    "x": 876,
+    "y": 1042,
+    "z": 11000,
+    "height": 634,
+    "width": 924,
+    "tabOrder": 11000
+  },
+  "visual": {
+    "visualType": "pivotTable",
+    "query": {
+      "queryState": {
+        "Rows": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Standard Fees"
+                    }
+                  },
+                  "Property": "Billing Group"
+                }
+              },
+              "queryRef": "Standard Fees.Billing Group",
+              "nativeQueryRef": "Billing Group",
+              "active": true
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Standard Fees"
+                    }
+                  },
+                  "Property": "Department"
+                }
+              },
+              "queryRef": "Standard Fees.Department",
+              "nativeQueryRef": "Department",
+              "active": true
+            }
+          ]
+        },
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Aggregation": {
+                  "Expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Standard Fees"
+                        }
+                      },
+                      "Property": "Previous Month Pulled Hours"
+                    }
+                  },
+                  "Function": 0
+                }
+              },
+              "queryRef": "Sum(Standard Fees.Previous Month Pulled Hours)",
+              "nativeQueryRef": "Sum of Previous Month Pulled Hours"
+            },
+            {
+              "field": {
+                "Aggregation": {
+                  "Expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Standard Fees"
+                        }
+                      },
+                      "Property": "New Hours Added this Month"
+                    }
+                  },
+                  "Function": 0
+                }
+              },
+              "queryRef": "Sum(Standard Fees.New Hours Added this Month)",
+              "nativeQueryRef": "Sum of New Hours Added this Month"
+            },
+            {
+              "field": {
+                "Aggregation": {
+                  "Expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Standard Fees"
+                        }
+                      },
+                      "Property": "Hours Available"
+                    }
+                  },
+                  "Function": 0
+                }
+              },
+              "queryRef": "Sum(Standard Fees.Hours Available)",
+              "nativeQueryRef": "Sum of Hours Available"
+            },
+            {
+              "field": {
+                "Aggregation": {
+                  "Expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Standard Fees"
+                        }
+                      },
+                      "Property": "Hours being pulled this month"
+                    }
+                  },
+                  "Function": 0
+                }
+              },
+              "queryRef": "Sum(Standard Fees.Hours being pulled this month)",
+              "nativeQueryRef": "Sum of Hours being pulled this month"
+            },
+            {
+              "field": {
+                "Aggregation": {
+                  "Expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Standard Fees"
+                        }
+                      },
+                      "Property": "New ETC Hours"
+                    }
+                  },
+                  "Function": 0
+                }
+              },
+              "queryRef": "Sum(Standard Fees.New ETC Hours)",
+              "nativeQueryRef": "Sum of New ETC Hours"
+            },
+            {
+              "field": {
+                "Aggregation": {
+                  "Expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Standard Fees"
+                        }
+                      },
+                      "Property": "Rate"
+                    }
+                  },
+                  "Function": 0
+                }
+              },
+              "queryRef": "Sum(Standard Fees.Rate)",
+              "nativeQueryRef": "Sum of Rate"
+            },
+            {
+              "field": {
+                "Aggregation": {
+                  "Expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Standard Fees"
+                        }
+                      },
+                      "Property": "Standard Fee"
+                    }
+                  },
+                  "Function": 0
+                }
+              },
+              "queryRef": "Sum(Standard Fees.Standard Fee)",
+              "nativeQueryRef": "Sum of Standard Fee"
+            }
+          ]
+        }
+      }
+    },
+    "expansionStates": [
+      {
+        "roles": [
+          "Rows"
+        ],
+        "levels": [
+          {
+            "queryRefs": [
+              "Standard Fees.Billing Group"
+            ],
+            "isPinned": true
+          },
+          {
+            "queryRefs": [
+              "Standard Fees.Department"
+            ],
+            "isCollapsed": true,
+            "isPinned": true
+          }
+        ],
+        "root": {}
+      }
+    ],
+    "objects": {
+      "columnWidth": [
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "112.98440979955456D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function"
+                          }
+                        },
+                        "Property": "Function Display Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'312 - Design and Drawings'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "49.861079476762974D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'10-Complete Design and Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'ME'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Mechine Design'"
+                      }
+                    }
+                  }
+                }
+              }
+            ],
+            "metadata": "Measure Tables.Hours Estimated"
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "42.198611149008386D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'10-Complete Design and Build'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Group"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'CE'"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Function Hierarchy"
+                          }
+                        },
+                        "Property": "Section Function Name"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Design and Drawings'"
+                      }
+                    }
+                  }
+                }
+              }
+            ],
+            "metadata": "Measure Tables.Hours Estimated"
+          }
+        }
+      ],
+      "grid": [
+        {
+          "properties": {
+            "textSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "8D"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "values": [
+        {
+          "properties": {
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "8D"
+                }
+              }
+            },
+            "valuesOnRow": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            }
+          }
+        },
+        {
+          "properties": {},
+          "selector": {
+            "data": [
+              {
+                "dataViewWildcard": {
+                  "matchingOption": 1
+                }
+              }
+            ],
+            "metadata": "Measure Tables.Hours Estimated"
+          }
+        }
+      ],
+      "columnHeaders": [
+        {
+          "properties": {
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "8D"
+                }
+              }
+            },
+            "autoSizeColumnWidth": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "rowHeaders": [
+        {
+          "properties": {
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "8D"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "subTotals": [
+        {
+          "properties": {
+            "columnSubtotals": {
+              "expr": {
+                "Literal": {
+                  "Value": "false"
+                }
+              }
+            },
+            "perColumnLevel": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "rowSubtotals": {
+              "expr": {
+                "Literal": {
+                  "Value": "false"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "columnFormatting": [
+        {
+          "properties": {
+            "styleHeader": {
+              "expr": {
+                "Literal": {
+                  "Value": "false"
+                }
+              }
+            },
+            "styleValues": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "backColor": {
+              "solid": {
+                "color": {
+                  "expr": {
+                    "ThemeDataColor": {
+                      "ColorId": 2,
+                      "Percent": 0.4
+                    }
+                  }
+                }
+              }
+            },
+            "styleSubtotals": {
+              "expr": {
+                "Literal": {
+                  "Value": "false"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Measure Tables.Hours Estimated"
+          }
+        }
+      ],
+      "general": [
+        {
+          "properties": {
+            "layout": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Tabular'"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "visualContainerObjects": {
+      "stylePreset": [
+        {
+          "properties": {
+            "name": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Condensed'"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "border": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "false"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "title": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "text": {
+              "expr": {
+                "Literal": {
+                  "Value": "'ETC Historical Part Costs'"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "drillFilterOtherVisuals": true
+  },
+  "filterConfig": {
+    "filters": [
+      {
+        "name": "b644dbcec241dff32dd6",
+        "field": {
+          "Measure": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "Measure Tables"
+              }
+            },
+            "Property": "ETC Historical Hours"
+          }
+        },
+        "type": "Advanced",
+        "filter": {
+          "Version": 2,
+          "From": [
+            {
+              "Name": "m",
+              "Entity": "Measure Tables",
+              "Type": 0
+            }
+          ],
+          "Where": [
+            {
+              "Condition": {
+                "Not": {
+                  "Expression": {
+                    "Comparison": {
+                      "ComparisonKind": 0,
+                      "Left": {
+                        "Measure": {
+                          "Expression": {
+                            "SourceRef": {
+                              "Source": "m"
+                            }
+                          },
+                          "Property": "ETC Historical Hours"
+                        }
+                      },
+                      "Right": {
+                        "Literal": {
+                          "Value": "null"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "howCreated": "User"
+      }
+    ]
+  }
+}

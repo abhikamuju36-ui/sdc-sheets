@@ -1,0 +1,9 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definitionProperties/2.0.0/schema.json",
+  "version": "4.0",
+  "datasetReference": {
+    "byConnection": {
+      "connectionString": "Data Source=\"powerbi://api.powerbi.com/v1.0/myorg/SDC Reports\";initial catalog=\"Job Hours Report - Management Level\";access mode=readonly;integrated security=ClaimsToken;semanticmodelid=5a47445c-a1c3-45b9-93e5-a9df3c465b29"
+    }
+  }
+}

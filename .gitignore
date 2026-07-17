@@ -52,3 +52,8 @@ next-env.d.ts
 
 # Throwaway verification scripts
 /scratch*/
+
+# Power BI project local artifacts (per Microsoft's pbip guidance):
+# cache.abf is a multi-MB binary data cache, localSettings.json is per-machine.
+**/.pbi/cache.abf
+**/.pbi/localSettings.json
