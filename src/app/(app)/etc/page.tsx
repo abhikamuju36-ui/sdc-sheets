@@ -17,7 +17,7 @@ import {
   reopenStandardSheetMonth,
 } from "@/lib/standard-sheet-actions";
 import { ETC_SECTIONS, PARTS_COST_SECTION } from "@/lib/sections";
-import { calcHoursLeft, suggestNewEtc, isMonthLocked, isValidMonth, nextMonth, round2 } from "@/lib/etc";
+import { calcHoursLeft, suggestNewEtc, isMonthLocked, isValidMonth, nextMonth, round2, workingDaysInMonth } from "@/lib/etc";
 import { submitMonth, reopenMonth, syncPowerBiForEtc } from "@/lib/etc-actions";
 import { RunReportButton } from "@/components/RunReportButton";
 import { SubmitAndLockButton } from "@/components/SubmitAndLockButton";
@@ -620,6 +620,9 @@ export default async function MonthlyEtcPage({
           {hoursActualFreshness?.refreshedThrough && (
             <> · Hours Refreshed Thru: {hoursActualFreshness.refreshedThrough.toISOString().slice(0, 10)}</>
           )}
+          {/* Same figure as the report's Working Days card — weekday count
+              for the selected work month. */}
+          <> · {`Working Days: ${workingDaysInMonth(month)}`}</>
           {distinctMonths.length === 0 && <> · no ETC history yet</>}
         </span>
       </div>

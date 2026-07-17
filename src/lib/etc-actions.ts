@@ -124,7 +124,13 @@ async function seedMonth(month: string) {
           if (existing && !existing.needsReview) continue; // already submitted — don't touch confirmed history
 
           const priorEntry = priorByKey.get(key);
-          const priorEtc = priorEntry ? Number(priorEntry.newEtc) : Number(eh.estimateToCompleteHours);
+          // No prior-month entry -> QUOTED hours, not estimate-to-complete:
+          // the report's own [ETC Historical Hours Prior Month] measure
+          // (SemanticModel TMDL, verified 2026-07-17) uses [Hours Quoted] for
+          // a job whose Start Date falls in the prior period. The two are
+          // usually equal for a brand-new job, but ETC can drift from quoted
+          // before the job's first ETC month — quoted is the report's rule.
+          const priorEtc = priorEntry ? Number(priorEntry.newEtc) : Number(eh.quotedHours);
           const hoursWorked = existing ? Number(existing.hoursWorked) : 0;
 
           await tx.etcEntry.upsert({

@@ -33,6 +33,21 @@ export function isValidMonth(month: string): boolean {
   return /^\d{4}-(0[1-9]|1[0-2])$/.test(month);
 }
 
+// Weekday (Mon–Fri) count for a "YYYY-MM" month — the same rule as the
+// report's [ETC Historical Working Days] measure (COUNTROWS of 'Date' where
+// Is Weekend = FALSE for the work month). No holiday calendar on either
+// side, so plain weekday counting IS exact parity.
+export function workingDaysInMonth(month: string): number {
+  const [y, m] = month.split("-").map(Number);
+  const daysInMonth = new Date(y, m, 0).getDate(); // day 0 of next month = last day of this one
+  let count = 0;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dow = new Date(y, m - 1, d).getDay();
+    if (dow !== 0 && dow !== 6) count++;
+  }
+  return count;
+}
+
 // A month is locked once every entry in it has been submitted/confirmed.
 // `length > 0` matters: `Array.every` on an empty array is vacuously true, which
 // would make a month with no entries yet (never started) look "locked".

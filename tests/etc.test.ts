@@ -8,6 +8,7 @@ import {
   prevMonth,
   nextMonth,
   isValidMonth,
+  workingDaysInMonth,
   hasPublishedHistory,
   groupStandardFeesRows,
   isSafeForLiveEtcSync,
@@ -52,6 +53,13 @@ test("isValidMonth: accepts YYYY-MM, rejects garbage", () => {
   assert.equal(isValidMonth("2026-6"), false);
   assert.equal(isValidMonth("banana"), false);
   assert.equal(isValidMonth(""), false);
+});
+
+test("workingDaysInMonth: weekday count, matches the report's Working Days card", () => {
+  assert.equal(workingDaysInMonth("2026-05"), 21); // the report's card shows 21 for the May 2026 period
+  assert.equal(workingDaysInMonth("2026-06"), 22); // June 2026 starts on a Monday, 30 days
+  assert.equal(workingDaysInMonth("2026-07"), 23);
+  assert.equal(workingDaysInMonth("2026-02"), 20); // non-leap February
 });
 
 test("isMonthLocked: locked only when non-empty and fully confirmed", () => {
