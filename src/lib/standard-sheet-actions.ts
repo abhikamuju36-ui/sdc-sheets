@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { logAudit } from "@/lib/audit";
 import { assertStandardSheetUnlocked } from "@/lib/standard-sheet-gate";
 import { getEtcMonthJobWhere } from "@/lib/etc-month-jobs";
-import { getExecutionEtcByJob } from "@/lib/execution-etc";
+import { getExecutionEtcByJob, isInStandardFeesAllocation } from "@/lib/execution-etc";
 import { isValidMonth, round2 } from "@/lib/etc";
 import { syncCategoryPoolsFromPowerBi } from "@/lib/sync-powerbi";
 import {
@@ -176,10 +176,12 @@ export async function submitStandardSheetMonth(month: string) {
   const session = await auth();
   const user = session?.user?.email ? await prisma.user.findUnique({ where: { email: session.user.email } }) : null;
 
-  const jobs = await prisma.job.findMany({
-    where: (await getEtcMonthJobWhere(month)).where,
-    select: { id: true, executionRate: true },
-  });
+  const jobs = (
+    await prisma.job.findMany({
+      where: (await getEtcMonthJobWhere(month)).where,
+      select: { id: true, executionRate: true, billable: true, excludedFromStandardFees: true },
+    })
+  ).filter(isInStandardFeesAllocation); // same membership rule as the live /etc Standard block
   const [etcByJob, effective, setting] = await Promise.all([
     getExecutionEtcByJob(jobs.map((j) => j.id), month),
     loadEffectivePools(month),

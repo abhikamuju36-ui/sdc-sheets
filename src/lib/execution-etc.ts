@@ -6,6 +6,17 @@ const SECTION_BILLING_GROUP = new Map(ETC_SECTIONS.map((s) => [s.code, s.billing
 
 export type ExecutionEtc = { engineering: number; shop: number; parts: number };
 
+// Which jobs participate in the Standard Fees allocation (Total ETC pool
+// share). Mirrors the sheet's manually-curated fee job list: internal
+// non-billable jobs (4000/6000/7000, SDC Showroom, …) never appear in it,
+// and the per-job flag covers deliberate one-off exclusions of otherwise
+// billable jobs (verified against the June 2026 sheet, which dropped 1115).
+// Excluded jobs still render on the ETC grid — they just get no fee row and
+// don't dilute anyone's % of total.
+export function isInStandardFeesAllocation(job: { billable: boolean; excludedFromStandardFees: boolean }): boolean {
+  return job.billable && !job.excludedFromStandardFees;
+}
+
 // Mirrors Standard Fees.xlsx's per-job VLOOKUP into Managers Fill Out's
 // "Total (New ETC) > Engineering/Shop > All > Total New ETC" and
 // "Parts Cost > Total > New ETC" columns — rolled up here from EtcEntry

@@ -23,7 +23,7 @@ import { RunReportButton } from "@/components/RunReportButton";
 import { SubmitAndLockButton } from "@/components/SubmitAndLockButton";
 import { SyncHistoryButton } from "@/components/SyncHistoryButton";
 import { isStandardSheetUnlocked, hadWrongPassword, unlockStandardSheet, lockStandardSheet } from "@/lib/standard-sheet-gate";
-import { getExecutionEtcByJob } from "@/lib/execution-etc";
+import { getExecutionEtcByJob, isInStandardFeesAllocation } from "@/lib/execution-etc";
 import { PageTitle } from "@/components/ui/Typography";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { MonthYearSelect } from "@/components/MonthYearSelect";
@@ -509,6 +509,10 @@ export default async function MonthlyEtcPage({
       }
     } else {
       for (const job of jobs) {
+        // Same membership rule as the sheet's fee job list: non-billable /
+        // flag-excluded jobs stay on the grid but get no Standard Fees row
+        // and don't enter the % of total base.
+        if (!isInStandardFeesAllocation(job)) continue;
         const etc = execEtcByJob.get(job.id) ?? { engineering: 0, shop: 0, parts: 0 };
         standardByJob.set(job.id, {
           jobId: job.id,

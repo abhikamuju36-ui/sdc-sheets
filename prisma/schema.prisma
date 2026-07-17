@@ -79,6 +79,11 @@ model Job {
   completeDate          DateTime?
   includeInTypeCalc     Boolean   @default(false)
   billable              Boolean   @default(true) // Billable vs. Non-Billable — manager-set, no upstream sync touches this
+  // Drops the job from the Standard Fees allocation (Total ETC pool share)
+  // without hiding it from the ETC grid — the sheet's job list was manually
+  // curated and sometimes excluded an active billable job (e.g. 1115 in the
+  // June 2026 sheet). Non-billable jobs are always excluded regardless.
+  excludedFromStandardFees Boolean @default(false)
   costQuoted            Decimal?  @db.Decimal(12, 2)
   costActualHistorical  Decimal?  @db.Decimal(12, 2)
   // Same manual-override protection as EstimatedHours.quotedHoursManuallyEdited
