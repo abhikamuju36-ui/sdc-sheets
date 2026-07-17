@@ -557,8 +557,16 @@ export default async function MonthlyEtcPage({
             <RunReportButton className={BUTTON_PRIMARY}>Refresh Data</RunReportButton>
           </form>
         )}
-        {started && !locked && jobs.length > 0 && (
+        {/* Submitting is only offered on the FULL grid: with a department
+            column filter active, the hidden sections' hoursWorked inputs
+            aren't in the form at all — on the current month submitMonth
+            rejects the post ("Missing Hours Worked"), and on a reopened
+            month it would lock in a sheet the manager only half-saw. */}
+        {started && !locked && jobs.length > 0 && selectedGroups.size === DEPT_GROUPS.length && (
           <SubmitAndLockButton formId="etc-month-form" className={BUTTON_SECONDARY} />
+        )}
+        {started && !locked && jobs.length > 0 && selectedGroups.size < DEPT_GROUPS.length && (
+          <span className="self-center text-xs text-sdc-gray-500">Clear the Columns filter to Submit and Lock.</span>
         )}
         {locked && role === "ADMIN" && (
           <form action={reopenMonth.bind(null, month)}>

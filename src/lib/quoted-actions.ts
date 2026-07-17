@@ -27,7 +27,15 @@ type MoneyField = (typeof MONEY_FIELDS)[number];
 // overwrite a manager's correction (same pattern as quotedHoursManuallyEdited
 // below) — those two are the only job fields either sync ever touches.
 export async function saveQuotedHours(formData: FormData) {
-  await Promise.all([saveHoursCells(formData), saveJobFields(formData), saveNewRows(formData)]);
+  // Sequential, new-rows FIRST: saveNewRows carries the batch's validation
+  // (blank Job Id / bad Type reject the whole submission), so it must run
+  // before any other write lands. Running the three concurrently meant a
+  // validation error could surface AFTER hours/job-field edits had already
+  // committed — the user sees "failed", assumes nothing saved, and re-edits
+  // against silently half-saved state.
+  await saveNewRows(formData);
+  await saveHoursCells(formData);
+  await saveJobFields(formData);
   revalidatePath("/quoted");
 }
 

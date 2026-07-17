@@ -134,8 +134,15 @@ export async function syncEtcHistoryFromPowerBi(): Promise<{
       const existingEntries = await prisma.etcEntry.findMany({ where: { month: period.month } });
       const existingByKey = new Map(existingEntries.map((e) => [`${e.jobId}::${e.section}`, e]));
 
-      const reconcileRow = (rawJobId: string | null, section: string, r: { PriorEtc: number | null; Left: number | null }) => {
+      const reconcileRow = (rawJobId: string | null, section: string, r: { PriorEtc: number | null; NewEtc: number | null; Left: number | null }) => {
         if (rawJobId == null) return null;
+        // An all-blank measure row means "no archive data for this combo",
+        // NOT "the archive says zero" — SUMMARIZECOLUMNS emits a row per
+        // job/measure combo with every measure BLANK when unpublished (see
+        // hasPublishedHistory). Coercing those blanks to 0 here would zero
+        // out a locked month's real values the moment one archive family
+        // (hours vs costs) publishes before the other.
+        if (r.PriorEtc == null && r.NewEtc == null && r.Left == null) return null;
         const job = jobByJobId.get(String(Number(rawJobId)));
         if (!job) return null;
         const existing = existingByKey.get(`${job.id}::${section}`);
@@ -151,15 +158,22 @@ export async function syncEtcHistoryFromPowerBi(): Promise<{
       };
 
       const updates: { id: number; priorEtc: number; hoursWorked: number; hoursLeftCalc: number }[] = [];
-      for (const r of historyRows) {
-        const section = r["Function Hierarchy[Section-Function Code]"];
-        if (section == null || !ETC_TRACKED_CODES.has(section)) continue;
-        const u = reconcileRow(r["Job[Job Id]"], section, r);
-        if (u) updates.push(u);
+      // Each archive family is gated on ITS OWN published-ness — the hours
+      // archive can land before the costs archive (or vice versa), and the
+      // unpublished one must not be treated as a sheet of zeros.
+      if (hasPublishedHistory(historyRows)) {
+        for (const r of historyRows) {
+          const section = r["Function Hierarchy[Section-Function Code]"];
+          if (section == null || !ETC_TRACKED_CODES.has(section)) continue;
+          const u = reconcileRow(r["Job[Job Id]"], section, r);
+          if (u) updates.push(u);
+        }
       }
-      for (const r of historyCostRows) {
-        const u = reconcileRow(r["Job[Job Id]"], PARTS_COST_SECTION, r);
-        if (u) updates.push(u);
+      if (hasPublishedHistory(historyCostRows)) {
+        for (const r of historyCostRows) {
+          const u = reconcileRow(r["Job[Job Id]"], PARTS_COST_SECTION, r);
+          if (u) updates.push(u);
+        }
       }
 
       if (updates.length > 0) {

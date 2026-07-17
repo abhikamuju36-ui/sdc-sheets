@@ -9,10 +9,20 @@ type AuditEntry = {
   metadata?: Record<string, unknown>;
 };
 
+// `summary` has no explicit @db type in schema.prisma, so Prisma's MySQL
+// default (VARCHAR(191)) applies. Found live 2026-07-17: syncEtcHistory's
+// reconciliation note (lists every reconciled month + field counts) can
+// exceed that and the whole audit record silently fails to write (P2000) —
+// defeating the exact record the reconciliation added this summary to
+// create. Truncate defensively so a long summary still leaves a real,
+// searchable log entry instead of no entry at all.
+const SUMMARY_MAX = 191;
+
 // Best-effort by design: a logging failure must never break the action it's
 // recording (e.g. a locked audit table shouldn't block an ETC submission).
 async function writeAuditLog(entry: AuditEntry & { userId: number | null; userEmail: string | null }) {
   try {
+    const summary = entry.summary.length > SUMMARY_MAX ? `${entry.summary.slice(0, SUMMARY_MAX - 1)}…` : entry.summary;
     await prisma.auditLog.create({
       data: {
         userId: entry.userId,
@@ -20,7 +30,7 @@ async function writeAuditLog(entry: AuditEntry & { userId: number | null; userEm
         action: entry.action,
         entityType: entry.entityType ?? null,
         entityId: entry.entityId !== undefined ? String(entry.entityId) : null,
-        summary: entry.summary,
+        summary,
         metadata: entry.metadata as never,
       },
     });

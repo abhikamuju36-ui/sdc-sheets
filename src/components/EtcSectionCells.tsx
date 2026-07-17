@@ -55,7 +55,15 @@ export function EtcSectionCells({
   // Hours Worked Month is no longer manager-editable — it auto-syncs from
   // Power BI on the same cadence as the rest of the live sync (see
   // instrumentation.ts), so a manual edit would just get overwritten anyway.
-  const workedText = wholeNum(initialWorked);
+  //
+  // The hidden form input must carry the EXACT stored value, not the rounded
+  // display text: submitMonth writes this value back to hoursWorked, so
+  // posting the display rounding would permanently replace every fractional
+  // Power-BI-synced value (e.g. 40.33) with its integer on each Submit —
+  // manufacturing drift against the source that the history reconcile would
+  // then keep flagging. Rounding is display-only.
+  const worked = round2(initialWorked);
+  const workedDisplay = wholeNum(initialWorked);
   const [newEtcText, setNewEtcText] = useState(
     initialDraft != null
       ? String(initialDraft)
@@ -68,7 +76,6 @@ export function EtcSectionCells({
   const [newEtcTouched, setNewEtcTouched] = useState(false);
   const lastSaved = useRef(newEtcText);
 
-  const worked = Number(workedText) || 0;
   const hoursLeft = calcHoursLeft(priorEtc, worked);
   const suggested = suggestNewEtc(priorEtc, worked);
   const decided = worked === 0 || initialDraft != null || initialConfirmed != null || newEtcTouched;
@@ -103,8 +110,8 @@ export function EtcSectionCells({
         {/* Read-only — auto-synced from Power BI, not manager-editable. The
             hidden input still carries the value into the form submission,
             since submitMonth reads it by `name` unchanged. */}
-        <input type="hidden" name={`hoursWorked__${entryId}`} value={workedText} />
-        {workedText}
+        <input type="hidden" name={`hoursWorked__${entryId}`} value={String(worked)} />
+        {workedDisplay}
       </td>
       <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-1 py-1 text-center text-[10px] text-sdc-gray-500`}>
         {wholeNum(hoursLeft)}

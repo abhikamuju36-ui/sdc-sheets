@@ -69,9 +69,6 @@ export async function unlockStandardSheet(formData: FormData): Promise<void> {
     cookieStore.set(COOKIE_NAME, cookieToken(), { httpOnly: true, sameSite: "lax", path: "/" });
     cookieStore.delete(ERROR_COOKIE);
   }
-  // The same unlock cookie gates both the Standard Sheet tab and the optional
-  // Standard columns on the Monthly ETC grid — revalidate both.
-  revalidatePath("/etc");
   revalidatePath("/etc");
 }
 
@@ -82,6 +79,5 @@ export async function lockStandardSheet(): Promise<void> {
   const cookieStore = await cookies();
   cookieStore.delete(COOKIE_NAME);
   cookieStore.delete(ERROR_COOKIE);
-  revalidatePath("/etc");
   revalidatePath("/etc");
 }

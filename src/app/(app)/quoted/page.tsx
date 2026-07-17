@@ -124,10 +124,20 @@ export default async function QuotedPage({
           ? { billable: false }
           : { id: -1 }; // neither checked -> match nothing, same as an empty `in` elsewhere
 
+  // Prisma `in` never matches NULL, so a plain customer `in` filter would
+  // permanently hide any job with no Customer set — including one just added
+  // on this very page (saveNewRows allows a blank Customer). With no filter
+  // active, null-customer jobs must show; with a filter active they're
+  // excluded like any other non-selected value.
+  const customerWhere =
+    customers === undefined
+      ? {} // no filter -> all jobs, including customer = null
+      : { customer: { in: selectedCustomers } };
+
   const jobs = await prisma.job.findMany({
     where: {
       type: { in: selectedTypes },
-      customer: { in: selectedCustomers },
+      ...customerWhere,
       status: { in: selectedStatuses },
       ...billableWhere,
     },

@@ -313,8 +313,10 @@ export async function submitMonth(month: string, formData: FormData) {
 
 // Autosaves a typed-but-unsubmitted New ETC override so it survives Refresh
 // Data, navigation, and browser crashes — parity with the sheet, whose Refresh
-// script skipped non-empty New ETC cells. Deliberately does NOT revalidate the
-// page: a re-render mid-typing would steal focus from the manager's next cell.
+// script skipped non-empty New ETC cells. Revalidates /etc so the derived
+// server-rendered numbers (Total New ETC, Standard Fees) reflect the draft;
+// the grid cells themselves are client components with their own state, so
+// the re-render doesn't reset what the manager is typing.
 export async function saveNewEtcDraft(entryId: number, value: number | null): Promise<void> {
   if (value !== null && (!Number.isFinite(value) || value < 0)) {
     throw new Error(`Invalid New ETC draft value "${value}".`);
@@ -458,8 +460,8 @@ export async function syncEtcHistory(_prevState: SyncHistoryResult | null, _form
 // (submitted) month — reopen it first if a genuine correction is needed, so a
 // clear can never silently erase confirmed history.
 export async function clearMonth(month: string, _formData: FormData) {
-  const entries = await prisma.etcEntry.findMany({ where: { month } });
-  if (isMonthLocked(entries)) {
+  const entriesBefore = await prisma.etcEntry.findMany({ where: { month }, select: { needsReview: true } });
+  if (isMonthLocked(entriesBefore)) {
     throw new Error(`${month} is already submitted — reopen it before clearing.`);
   }
   // Clearing a reopened HISTORICAL month would overwrite every manager-
@@ -467,8 +469,19 @@ export async function clearMonth(month: string, _formData: FormData) {
   // overrides that made it history. Clear belongs to the live workflow only.
   await assertCurrentEtcMonth(month);
 
+  let clearedCount = 0;
   await prisma.$transaction(
     async (tx) => {
+      // Re-read and re-check INSIDE the transaction: a Submit and Lock can
+      // commit between the check above and this write (its own transaction
+      // runs up to 20s), and clearing a just-locked month would flip every
+      // confirmed entry back to needsReview and wipe the manager's
+      // overrides. Same pattern as seedMonth's in-tx snapshot.
+      const entries = await tx.etcEntry.findMany({ where: { month } });
+      if (isMonthLocked(entries)) {
+        throw new Error(`${month} was submitted while the clear was running — nothing was changed.`);
+      }
+      clearedCount = entries.length;
       for (const entry of entries) {
         const priorEtc = Number(entry.priorEtc);
         const hoursWorked = Number(entry.hoursWorked);
@@ -490,7 +503,7 @@ export async function clearMonth(month: string, _formData: FormData) {
     action: "etc.clearMonth",
     entityType: "EtcMonth",
     entityId: month,
-    summary: `Cleared New ETC on ${entries.length} entr${entries.length === 1 ? "y" : "ies"} for ${month}`,
+    summary: `Cleared New ETC on ${clearedCount} entr${clearedCount === 1 ? "y" : "ies"} for ${month}`,
   });
 
   revalidatePath("/etc");

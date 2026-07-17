@@ -7,7 +7,7 @@ import { logAudit } from "@/lib/audit";
 import { assertStandardSheetUnlocked } from "@/lib/standard-sheet-gate";
 import { getEtcMonthJobWhere } from "@/lib/etc-month-jobs";
 import { getExecutionEtcByJob } from "@/lib/execution-etc";
-import { isValidMonth } from "@/lib/etc";
+import { isValidMonth, round2 } from "@/lib/etc";
 import { syncCategoryPoolsFromPowerBi } from "@/lib/sync-powerbi";
 import {
   calcTotalEtcDollars,
@@ -43,10 +43,19 @@ export async function loadEffectivePools(month: string) {
 // A submitted month is frozen — server actions must enforce it, not just the
 // UI hiding buttons. Also the single choke point every month-scoped action
 // passes through, so a crafted/garbage month can never reach a write.
+//
+// Also refuses a month whose pools came from the PBI historical backfill
+// (source: "power_bi_history") even without a StandardSheetSnapshot: editing
+// those would corrupt the verified ledger chain (sync-powerbi.ts carries
+// `prior.newEtcHours` forward), and a later refresh of the FOLLOWING month
+// would then inherit the tampered balance — the same class of bug the June
+// 2026 pool-reset investigation found and fixed.
 async function assertMonthNotSubmitted(month: string) {
   if (!isValidMonth(month)) throw new Error(`"${month}" is not a valid month (expected YYYY-MM).`);
   const submitted = await prisma.standardSheetSnapshot.findFirst({ where: { month }, select: { id: true } });
   if (submitted) throw new Error(`${month} is submitted and frozen — reopen it first.`);
+  const historical = await prisma.categoryPool.findFirst({ where: { month, source: "power_bi_history" }, select: { id: true } });
+  if (historical) throw new Error(`${month}'s pools came from Power BI's historical archive — editing them here would break the balance chain to later months.`);
 }
 
 function globalRates(setting: { engrRate: unknown; shopRate: unknown; partsMarkup: unknown } | null) {
@@ -78,8 +87,11 @@ export async function savePools(month: string, formData: FormData) {
 
   const manualCell = (name: string, stored: number): number => {
     const raw = formData.get(name);
-    if (raw === null) return stored;
-    if (raw === "") return 0;
+    // Absent AND cleared both mean "keep the stored value" — a field wiped
+    // mid-edit must not silently save 0 (a 0 Rate collapses that whole
+    // department's Standard Fee to $0). An explicit zero is still saveable
+    // by typing 0.
+    if (raw === null || raw === "") return stored;
     const n = Number(raw);
     if (!Number.isFinite(n) || n < 0) throw new Error(`Invalid value "${raw}" for ${name}.`);
     return n;
@@ -91,8 +103,8 @@ export async function savePools(month: string, formData: FormData) {
     if (!pool) continue; // pool rows come from Refresh Pools (Power BI) or migration
     const hoursPulledThisMonth = manualCell(`pulled__${category}`, Number(pool.hoursPulledThisMonth));
     const rate = manualCell(`rate__${category}`, Number(pool.rate));
-    const newEtcHours = Number(pool.hoursAvailable) - hoursPulledThisMonth;
-    const standardFee = newEtcHours * rate;
+    const newEtcHours = round2(Number(pool.hoursAvailable) - hoursPulledThisMonth);
+    const standardFee = round2(newEtcHours * rate);
     writes.push({ id: pool.id, data: { hoursPulledThisMonth, rate, newEtcHours, standardFee } });
     changes.push({ category, hoursPulledThisMonth, rate, newEtcHours, standardFee });
   }
