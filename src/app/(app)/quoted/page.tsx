@@ -5,6 +5,7 @@ import { SECTIONS, PHASE_GROUPS } from "@/lib/sections";
 import { PageTitle } from "@/components/ui/Typography";
 import { TABLE_HEADER_ROW, TABLE_GRID, BUTTON_PRIMARY } from "@/components/ui/classnames";
 import { PhaseColumnPicker } from "@/components/PhaseColumnPicker";
+import { JobNameToggle } from "@/components/JobNameToggle";
 import { MultiSelectFilter } from "@/components/MultiSelectFilter";
 import { SortButton } from "@/components/SortButton";
 import { AddProjectButton } from "@/components/AddProjectButton";
@@ -72,9 +73,12 @@ export default async function QuotedPage({
     types?: string;
     statuses?: string;
     billables?: string;
+    jobname?: string;
   }>;
 }) {
-  const { cols, sort, dir, customers, types, statuses, billables } = await searchParams;
+  const { cols, sort, dir, customers, types, statuses, billables, jobname } = await searchParams;
+  // Job column toggle — shown unless ?jobname=0 (same control as /etc).
+  const showJobName = jobname !== "0";
   // No `cols` param at all (first visit) defaults to every section visible;
   // an explicit (possibly empty) `cols` value means the user has picked some.
   const visibleCodes = cols === undefined ? SECTIONS.map((s) => s.code) : cols.split(",").filter(Boolean);
@@ -187,6 +191,7 @@ export default async function QuotedPage({
             visibleCodes={visibleCodes}
           />
         ))}
+        <JobNameToggle show={showJobName} label="Job" />
       </div>
 
       <form action={saveQuotedHours}>
@@ -200,21 +205,23 @@ export default async function QuotedPage({
               <th rowSpan={3} className="sticky left-8 z-10 w-20 min-w-20 max-w-20 overflow-hidden truncate bg-sdc-gray-100 px-2 py-2 align-bottom">
                 <SortButton sortKey="jobId" label="Job Id" currentSort={sortKey} currentDir={sortDir} />
               </th>
-              <th
-                rowSpan={3}
-                style={{ width: "var(--job-col-width, 280px)", minWidth: "var(--job-col-width, 280px)" }}
-                className="sticky left-[112px] z-10 border-l border-r border-sdc-border bg-sdc-gray-100 px-2 py-2 align-bottom"
-              >
-                Job
-                <div
-                  className="col-resize-handle absolute right-0 inset-y-0 z-10 w-3"
-                  data-resize-var="--job-col-width"
-                  data-resize-min="160"
-                  data-resize-max="640"
-                  title="Drag to resize"
-                  style={{ touchAction: "none" }}
-                />
-              </th>
+              {showJobName && (
+                <th
+                  rowSpan={3}
+                  style={{ width: "var(--job-col-width, 280px)", minWidth: "var(--job-col-width, 280px)" }}
+                  className="sticky left-[112px] z-10 border-l border-r border-sdc-border bg-sdc-gray-100 px-2 py-2 align-bottom"
+                >
+                  Job
+                  <div
+                    className="col-resize-handle absolute right-0 inset-y-0 z-10 w-3"
+                    data-resize-var="--job-col-width"
+                    data-resize-min="160"
+                    data-resize-max="640"
+                    title="Drag to resize"
+                    style={{ touchAction: "none" }}
+                  />
+                </th>
+              )}
               <th rowSpan={3} className="px-2 py-2 align-bottom">
                 Customer
               </th>
@@ -303,12 +310,13 @@ export default async function QuotedPage({
           </thead>
           <tbody>
             <NewProjectRows
+              showJobName={showJobName}
               phaseGroups={PHASE_GROUPS.map((g) => ({ phase: g.phase, sections: visibleSectionsByPhase.get(g.phase) ?? [] }))}
               allStatuses={allStatuses}
             />
             {jobs.length === 0 && (
               <tr>
-                <td colSpan={9 + dataColumnCount + 2} className="px-4 py-5 text-center text-sdc-gray-400">
+                <td colSpan={(showJobName ? 9 : 8) + dataColumnCount + 2} className="px-4 py-5 text-center text-sdc-gray-400">
                   No jobs found.
                 </td>
               </tr>
@@ -333,18 +341,20 @@ export default async function QuotedPage({
                   >
                     {job.jobId}
                   </td>
-                  <td
-                    style={{ width: "var(--job-col-width, 280px)", minWidth: "var(--job-col-width, 280px)" }}
-                    className={`sticky left-[112px] z-10 whitespace-nowrap border-l border-r border-sdc-border px-2 py-1.5 text-center text-[10px] font-medium text-sdc-navy ${zebraSticky}`}
-                  >
-                    <input
-                      type="text"
-                      name={`jobField__${job.id}__jobName`}
-                      defaultValue={job.jobName}
-                      aria-label={`Job Name, ${job.jobName}`}
-                      className="w-full min-w-0 text-center"
-                    />
-                  </td>
+                  {showJobName && (
+                    <td
+                      style={{ width: "var(--job-col-width, 280px)", minWidth: "var(--job-col-width, 280px)" }}
+                      className={`sticky left-[112px] z-10 whitespace-nowrap border-l border-r border-sdc-border px-2 py-1.5 text-center text-[10px] font-medium text-sdc-navy ${zebraSticky}`}
+                    >
+                      <input
+                        type="text"
+                        name={`jobField__${job.id}__jobName`}
+                        defaultValue={job.jobName}
+                        aria-label={`Job Name, ${job.jobName}`}
+                        className="w-full min-w-0 text-center"
+                      />
+                    </td>
+                  )}
                   <td className="whitespace-nowrap px-2 py-1.5 text-center text-[10px] text-sdc-gray-600">
                     <input
                       type="text"

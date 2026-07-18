@@ -3,21 +3,22 @@
 import { useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-// Engineering / Shop column filter for the Monthly ETC grid. Toggles the
-// `dept` query param (comma-separated billing groups); the server component
-// hides the section-column blocks for any unselected group. Same dropdown
-// interaction as PhaseColumnPicker/MultiSelectFilter, but scoped to /etc and
-// preserving the current month. Selecting both (or none) drops the param so
-// the default is the full grid — you can never hide every column.
+// Column visibility controls for the Monthly ETC grid. Toggles the `dept`
+// query param (comma-separated billing groups) to hide section-column blocks,
+// and the `jobname` param ("0" = hidden) to hide the Job Name column. Same
+// dropdown interaction as PhaseColumnPicker/MultiSelectFilter, but scoped to
+// /etc and preserving the current month. Selecting both groups (or none)
+// drops the dept param so the default is the full grid — you can never hide
+// every section column.
 const GROUPS = ["Engineering", "Shop"] as const;
 
-export function DeptColumnFilter({ selected }: { selected: string[] }) {
+export function DeptColumnFilter({ selected, showJobName }: { selected: string[]; showJobName: boolean }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const detailsRef = useRef<HTMLDetailsElement>(null);
   const selectedSet = new Set(selected.length ? selected : GROUPS);
   const checkedCount = GROUPS.filter((g) => selectedSet.has(g)).length;
-  const allChecked = checkedCount === GROUPS.length;
+  const allChecked = checkedCount === GROUPS.length && showJobName;
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -45,6 +46,14 @@ export function DeptColumnFilter({ selected }: { selected: string[] }) {
     navigate(next);
   }
 
+  function toggleJobName() {
+    const qs = new URLSearchParams(searchParams.toString());
+    // Shown is the default — keep the URL clean unless hidden.
+    if (showJobName) qs.set("jobname", "0");
+    else qs.delete("jobname");
+    router.push(`/etc?${qs.toString()}`, { scroll: false });
+  }
+
   return (
     <details ref={detailsRef} className="group relative inline-block">
       <summary
@@ -55,7 +64,7 @@ export function DeptColumnFilter({ selected }: { selected: string[] }) {
         }`}
       >
         Columns
-        {!allChecked && ` (${checkedCount}/${GROUPS.length})`}
+        {!allChecked && " (filtered)"}
         <svg
           viewBox="0 0 16 16"
           width="10"
@@ -76,6 +85,11 @@ export function DeptColumnFilter({ selected }: { selected: string[] }) {
             <span className="flex-1">{g}</span>
           </label>
         ))}
+        <p className="mt-1 border-t border-sdc-border px-1.5 pb-1 pt-2 text-[11px] text-sdc-gray-400">Grid columns:</p>
+        <label className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-sdc-gray-100">
+          <input type="checkbox" checked={showJobName} onChange={toggleJobName} className="h-3.5 w-3.5 shrink-0" />
+          <span className="flex-1">Job Name</span>
+        </label>
       </div>
     </details>
   );

@@ -282,9 +282,11 @@ function currentMonth() {
 export default async function MonthlyEtcPage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string; dept?: string; standards?: string }>;
+  searchParams: Promise<{ month?: string; dept?: string; standards?: string; jobname?: string }>;
 }) {
-  const { month: monthParam, dept: deptParam, standards: standardsParam } = await searchParams;
+  const { month: monthParam, dept: deptParam, standards: standardsParam, jobname: jobnameParam } = await searchParams;
+  // Job Name column toggle (Columns dropdown) — shown unless ?jobname=0.
+  const showJobName = jobnameParam !== "0";
   // The Standard Sheet entry point is hidden by design (only a few people know
   // it exists). The password box renders only when this secret flag is present
   // — reached by right-clicking the "Monthly ETC" sidebar item. It never shows
@@ -555,7 +557,7 @@ export default async function MonthlyEtcPage({
           lockedMonths={lockedMonthList}
           nextStartable={nextStartable}
         />
-        <DeptColumnFilter selected={visibleGroups} />
+        <DeptColumnFilter selected={visibleGroups} showJobName={showJobName} />
         {!locked && (
           <form action={syncPowerBiForEtc.bind(null, month)}>
             <RunReportButton className={BUTTON_PRIMARY}>Refresh Data</RunReportButton>
@@ -668,24 +670,28 @@ export default async function MonthlyEtcPage({
                   <th rowSpan={5} className="sticky left-0 z-10 w-10 min-w-10 bg-sdc-gray-100 px-2 py-3 text-center align-bottom">
                     #
                   </th>
-                  <th rowSpan={5} className="sticky left-10 z-10 w-20 min-w-20 bg-sdc-gray-100 px-3 py-3 align-bottom">
+                  {/* When Job Name is hidden, the heavy black divider before
+                      the section blocks moves onto Job Id instead. */}
+                  <th rowSpan={5} className={`sticky left-10 z-10 w-20 min-w-20 bg-sdc-gray-100 px-3 py-3 align-bottom ${showJobName ? "" : "border-r-2 border-black"}`}>
                     Job Id
                   </th>
-                  <th
-                    rowSpan={5}
-                    style={{ width: "var(--etc-job-col-width, 260px)", minWidth: "var(--etc-job-col-width, 260px)" }}
-                    className="sticky left-[120px] z-10 border-r-2 border-black bg-sdc-gray-100 px-3 py-3 align-bottom"
-                  >
-                    Job Name
-                    <div
-                      className="col-resize-handle absolute right-0 inset-y-0 z-10 w-3"
-                      data-resize-var="--etc-job-col-width"
-                      data-resize-min="150"
-                      data-resize-max="600"
-                      title="Drag to resize"
-                      style={{ touchAction: "none" }}
-                    />
-                  </th>
+                  {showJobName && (
+                    <th
+                      rowSpan={5}
+                      style={{ width: "var(--etc-job-col-width, 260px)", minWidth: "var(--etc-job-col-width, 260px)" }}
+                      className="sticky left-[120px] z-10 border-r-2 border-black bg-sdc-gray-100 px-3 py-3 align-bottom"
+                    >
+                      Job Name
+                      <div
+                        className="col-resize-handle absolute right-0 inset-y-0 z-10 w-3"
+                        data-resize-var="--etc-job-col-width"
+                        data-resize-min="150"
+                        data-resize-max="600"
+                        title="Drag to resize"
+                        style={{ touchAction: "none" }}
+                      />
+                    </th>
+                  )}
                   {headerRuns(visibleCols, (c) => c.phaseLabel, (c) => c.phaseLabel).map((p, i) => (
                     <th key={p.key + i} colSpan={p.count * SUB_COLUMNS.length} className={`${i === 0 ? "border-l border-sdc-border" : PHASE_EDGE} px-3 py-1.5 text-center`}>
                       {p.label}
@@ -861,14 +867,16 @@ export default async function MonthlyEtcPage({
                   return (
                     <tr key={job.id} className={`hover:bg-sdc-blue-light/40 ${zebra}`}>
                       <td className={`sticky left-0 z-10 w-10 min-w-10 px-2 py-1 text-center text-sdc-gray-400 ${zebraSticky}`}>{jobIndex + 1}</td>
-                      <td className={`sticky left-10 z-10 w-20 min-w-20 px-3 py-1 text-center font-mono text-sdc-gray-400 ${zebraSticky}`}>{job.jobId}</td>
-                      <td
-                        style={{ width: "var(--etc-job-col-width, 260px)", minWidth: "var(--etc-job-col-width, 260px)" }}
-                        className={`sticky left-[120px] z-10 truncate border-r-2 border-black px-3 py-1 text-center font-medium text-sdc-navy ${zebraSticky}`}
-                        title={job.jobName}
-                      >
-                        {job.jobName}
-                      </td>
+                      <td className={`sticky left-10 z-10 w-20 min-w-20 px-3 py-1 text-center font-mono text-sdc-gray-400 ${showJobName ? "" : "border-r-2 border-black"} ${zebraSticky}`}>{job.jobId}</td>
+                      {showJobName && (
+                        <td
+                          style={{ width: "var(--etc-job-col-width, 260px)", minWidth: "var(--etc-job-col-width, 260px)" }}
+                          className={`sticky left-[120px] z-10 truncate border-r-2 border-black px-3 py-1 text-center font-medium text-sdc-navy ${zebraSticky}`}
+                          title={job.jobName}
+                        >
+                          {job.jobName}
+                        </td>
+                      )}
                       {visibleCols.map((s, sIdx) => {
                         const edge = edgeFor(s.code, sIdx);
                         const entry = entryByCode.get(s.code);
@@ -1038,7 +1046,7 @@ export default async function MonthlyEtcPage({
                 )}
                 {jobs.length > 0 && (
                   <tr className="border-t-2 border-sdc-navy bg-sdc-gray-100 font-medium">
-                    <td className="sticky left-0 z-10 bg-sdc-gray-100 px-3 py-2 text-center" colSpan={3}>
+                    <td className="sticky left-0 z-10 bg-sdc-gray-100 px-3 py-2 text-center" colSpan={showJobName ? 3 : 2}>
                       Total
                     </td>
                     {visibleCols.map((s, sIdx) => {

@@ -12,7 +12,17 @@ type PhaseGroup = { phase: string; sections: { code: string; name: string }[] };
 // client-side temp id instead of a job.id. Field names use the `newRow__`/
 // `newRowHours__` prefixes quoted-actions.ts looks for; Job Id is the only
 // field it requires non-empty before it'll create anything.
-export function NewProjectRows({ phaseGroups, allStatuses }: { phaseGroups: PhaseGroup[]; allStatuses: string[] }) {
+export function NewProjectRows({
+  phaseGroups,
+  allStatuses,
+  showJobName = true,
+}: {
+  phaseGroups: PhaseGroup[];
+  allStatuses: string[];
+  // Mirrors the page's Job column toggle — a hidden Job column means no name
+  // cell here either (saveNewRows defaults a blank name to the Job Id).
+  showJobName?: boolean;
+}) {
   const tempIds = useNewProjectRowIds();
 
   return (
@@ -42,18 +52,20 @@ export function NewProjectRows({ phaseGroups, allStatuses }: { phaseGroups: Phas
               className="w-full min-w-0 text-center font-semibold"
             />
           </td>
-          <td
-            style={{ width: "var(--job-col-width, 280px)", minWidth: "var(--job-col-width, 280px)" }}
-            className="sticky left-[112px] z-10 whitespace-nowrap border-l border-r border-sdc-border bg-sdc-yellow-bg/60 px-2 py-1.5 text-center text-[10px] font-medium text-sdc-navy"
-          >
-            <input
-              type="text"
-              name={`newRow__${tempId}__jobName`}
-              placeholder="Job Name (defaults to Job Id)"
-              aria-label="New project Job Name"
-              className="w-full min-w-0 text-center"
-            />
-          </td>
+          {showJobName && (
+            <td
+              style={{ width: "var(--job-col-width, 280px)", minWidth: "var(--job-col-width, 280px)" }}
+              className="sticky left-[112px] z-10 whitespace-nowrap border-l border-r border-sdc-border bg-sdc-yellow-bg/60 px-2 py-1.5 text-center text-[10px] font-medium text-sdc-navy"
+            >
+              <input
+                type="text"
+                name={`newRow__${tempId}__jobName`}
+                placeholder="Job Name (defaults to Job Id)"
+                aria-label="New project Job Name"
+                className="w-full min-w-0 text-center"
+              />
+            </td>
+          )}
           <td className="whitespace-nowrap px-2 py-1.5 text-center text-[10px] text-sdc-gray-600">
             <input type="text" name={`newRow__${tempId}__customer`} placeholder="—" aria-label="New project Customer" className="text-center" />
           </td>
