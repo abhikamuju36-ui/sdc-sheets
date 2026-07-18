@@ -142,9 +142,15 @@ model JobMonthlyActualHours {
 // Paylocity's export into the model advances.
 model PowerBiFreshness {
   id               Int      @id @default(autoincrement())
-  source           String   @unique // e.g. "hours_actual"
+  source           String   @unique // e.g. "hours_actual", "dataset_refresh"
   refreshedThrough DateTime
   checkedAt        DateTime @default(now())
+  // For source "dataset_refresh": the Power BI dataset's own last refresh
+  // outcome ("Completed" / "Failed: <errorCode>") — surfaced in the ETC
+  // header so a silently failing upstream refresh (found live 2026-07-18:
+  // CredentialsNotSpecified, two days of stale hours) is visible instead
+  // of quietly aging the data.
+  status           String?
 }
 
 // Per-job, per-section-code hours across three snapshots, confirmed from the
