@@ -13,9 +13,14 @@ export async function register() {
   if (g.__pbiAutoSyncStarted) return;
   g.__pbiAutoSyncStarted = true;
 
-  const { syncActualHoursFromPowerBi, syncHoursWorkedFromPowerBi } = await import("@/lib/sync-powerbi");
+  const { syncActualHoursFromPowerBi, syncHoursWorkedFromPowerBi, syncPartsCostFromPowerBi, syncCategoryPoolsFromPowerBi, syncQuotedFromPowerBi } =
+    await import("@/lib/sync-powerbi");
   const { prisma } = await import("@/lib/prisma");
   const { isMonthLocked } = await import("@/lib/etc");
+
+  // Quoted hours change far less often than actuals — refresh them hourly
+  // rather than every cycle (each run queries every job's quoted matrix).
+  let cyclesSinceQuotedSync = Number.MAX_SAFE_INTEGER; // first cycle always syncs
 
   const runSync = async () => {
     try {
@@ -27,12 +32,10 @@ export async function register() {
       console.error("[auto-sync] Power BI actual hours sync failed:", err);
     }
 
-    // Keeps the Monthly ETC grid's per-section "Hours Worked Month" column
-    // live without waiting for a manual Run Report click — same PBI measure
-    // Run Report already pulls, just on the same 10-minute cadence as the
-    // job-level sync above. Scoped to the single latest month and skipped
-    // entirely once it's locked (submitted) — a locked month is frozen
-    // history and must never be touched outside an explicit admin reopen.
+    // Keep the current (latest, unlocked) ETC month fully live — the same
+    // pulls a manual Run Report does, on the auto cadence: per-section Hours
+    // Worked, the Parts Cost block, and the Standard Fees pools. A locked
+    // month is frozen history and is never touched outside an admin reopen.
     try {
       const latest = await prisma.etcEntry.findFirst({ orderBy: { month: "desc" }, select: { month: true } });
       if (!latest) return;
@@ -41,8 +44,36 @@ export async function register() {
 
       const result = await syncHoursWorkedFromPowerBi(latest.month);
       console.log(`[auto-sync] ETC hours worked (${latest.month}): ${result.rowsUpdated} rows updated, ${result.rowsSkipped} skipped`);
+
+      const parts = await syncPartsCostFromPowerBi(latest.month);
+      console.log(`[auto-sync] Parts cost (${latest.month}): ${parts.rowsUpserted} rows upserted`);
+
+      // Pools: only while the month's standard sheet is still open (no
+      // snapshot) and not a PBI-archive backfill — the same guards the
+      // manual Refresh Pools action enforces. A no-op until Power BI's
+      // period for the month exists; it self-populates the moment it does.
+      const [snapshot, historicalPool] = await Promise.all([
+        prisma.standardSheetSnapshot.findFirst({ where: { month: latest.month }, select: { id: true } }),
+        prisma.categoryPool.findFirst({ where: { month: latest.month, source: "power_bi_history" }, select: { id: true } }),
+      ]);
+      if (!snapshot && !historicalPool) {
+        const pools = await syncCategoryPoolsFromPowerBi(latest.month);
+        console.log(`[auto-sync] Category pools (${latest.month}): ${pools.poolsUpserted} upserted`);
+      }
     } catch (err) {
-      console.error("[auto-sync] ETC hours worked sync failed:", err);
+      console.error("[auto-sync] ETC current-month sync failed:", err);
+    }
+
+    // Quoted hours + estimate-to-complete (Projects grid), hourly.
+    try {
+      cyclesSinceQuotedSync++;
+      if (cyclesSinceQuotedSync >= 6) {
+        const quoted = await syncQuotedFromPowerBi();
+        console.log(`[auto-sync] Quoted hours: ${JSON.stringify(quoted)}`);
+        cyclesSinceQuotedSync = 0;
+      }
+    } catch (err) {
+      console.error("[auto-sync] Quoted hours sync failed:", err);
     }
   };
 
