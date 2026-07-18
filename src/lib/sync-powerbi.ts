@@ -267,6 +267,20 @@ export async function syncPartsCostFromPowerBi(month: string): Promise<{ rowsUps
   const jobs = await prisma.job.findMany({ where: etcActiveJobFilter, select: { id: true, jobId: true } });
   const jobByJobId = new Map(jobs.map((j) => [j.jobId, j]));
 
+  // The app's own prior-month Parts Cost decisions take precedence over
+  // Power BI's live running balance: with the monthly review happening in
+  // the app from July 2026, the prior month's confirmed New ETC IS the
+  // authoritative opening balance (same chain rule as hours and pools).
+  // Power BI's [ETC Monthly Process - Prior ETC Cost] only reflects the
+  // last EXCEL submission pushed to the source warehouse, which lags (or,
+  // post-cutover, never arrives). PBI remains the fallback for jobs with
+  // no prior-month app entry.
+  const priorMonthParts = await prisma.etcEntry.findMany({
+    where: { month: previousMonth(month), section: PARTS_COST_SECTION },
+    select: { jobId: true, newEtc: true },
+  });
+  const priorAppByJobPk = new Map(priorMonthParts.map((e) => [e.jobId, Number(e.newEtc)]));
+
   let rowsUpserted = 0;
 
   for (const row of priorRows) {
@@ -277,7 +291,7 @@ export async function syncPartsCostFromPowerBi(month: string): Promise<{ rowsUps
     const job = jobByJobId.get(jobId);
     if (!job) continue;
 
-    const priorEtc = row.PriorEtcCost;
+    const priorEtc = priorAppByJobPk.get(job.id) ?? row.PriorEtcCost;
     const moneySpent = spentByJobId.get(jobId) ?? 0;
 
     // Re-checked per-row, same reason as syncHoursWorkedFromPowerBi: this
