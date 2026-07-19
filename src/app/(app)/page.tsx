@@ -73,12 +73,12 @@ export default async function Home() {
   const syncRows = [
     { label: "Jobs from TotalETO", action: runTotalEtoSync, lastSynced: lastTotalEtoSync?.totEtoSyncedAt, dataThrough: null },
     {
-      label: "Actual hours from Power BI",
+      label: "Actual hours from Paylocity (SharePoint)",
       action: runPowerBiSync,
       lastSynced: lastPowerBiSync?.syncedAt,
       dataThrough: hoursActualFreshness?.refreshedThrough,
     },
-    { label: "Quoted hours & cost from Power BI", action: runQuotedSync, lastSynced: lastQuotedSync?.updatedAt, dataThrough: null },
+    { label: "Quoted hours & cost", action: runQuotedSync, lastSynced: lastQuotedSync?.updatedAt, dataThrough: null },
   ];
 
   const statIcons: Record<string, { bg: string; fg: string; path: React.ReactNode }> = {

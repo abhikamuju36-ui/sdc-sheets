@@ -31,7 +31,7 @@ export function RunReportButton({ children, className }: { children: React.React
           role="status"
           className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-lg bg-sdc-navy px-4 py-3 text-sm font-medium text-white shadow-lg"
         >
-          <span className="text-sdc-lime">✓</span> Report completed — data refreshed from Power BI.
+          <span className="text-sdc-lime">✓</span> Report completed — data refreshed from the source systems.
         </div>
       )}
     </>

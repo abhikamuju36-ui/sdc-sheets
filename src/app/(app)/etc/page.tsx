@@ -635,10 +635,10 @@ export default async function MonthlyEtcPage({
 
       <p className="mb-4 text-xs text-sdc-gray-400">
         {!started
-          ? `"Refresh Data" starts ${month}: it seeds the job rows and pulls the latest hours from Power BI, just like the sheet.`
+          ? `"Refresh Data" starts ${month}: it seeds the job rows and pulls the latest hours (Paylocity) and parts costs (TotalETO), just like the sheet.`
           : locked
             ? `${month} is submitted and locked — these numbers are frozen exactly as submitted. Pick a month above to view any past submission.`
-            : `"Refresh Data" pulls the latest numbers from Power BI for the selected month. Enter Hours Worked, confirm or override each New ETC (suggestion shown in yellow), then Submit and Lock.`}
+            : `"Refresh Data" pulls the latest hours (Paylocity) and parts costs (TotalETO) for the selected month. Enter Hours Worked, confirm or override each New ETC (suggestion shown in yellow), then Submit and Lock.`}
       </p>
 
       {started && (
