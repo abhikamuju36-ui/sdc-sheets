@@ -41,6 +41,8 @@
     ".next-preview2/dev/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    ".next-preview",
+    ".next-preview2"
   ]
 }

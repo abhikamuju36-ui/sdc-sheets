@@ -1,36 +1,65 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SDC ETC Planner
 
-## Getting Started
+Replaces the `Project Planner Data Control.xlsx`, `End Of Month ETC Sheet.xlsx`,
+and `Standard Fees.xlsx` workbooks with a single web app: monthly
+Estimate-to-Complete tracking, the Projects (quoted hours) grid, and the
+Standard Fees calculation — sourced live from Power BI (Fabric warehouse +
+SharePoint) and TotalETO.
 
-First, run the development server:
+Next.js 16 (App Router) · React 19 · Prisma / MySQL · next-auth v5.
+
+## Development
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run dev        # dev server with hot reload, http://localhost:3010
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Use `localhost:3010` (not the hostname) in dev — see the dev-origin note in
+`next.config.ts`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Production
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run build      # optimized build (also runs the type check)
+npm start          # production server on port 3010
+```
 
-## Learn More
+`npm start` runs the same server dev uses, minus hot-reload — faster, lower
+memory, and it surfaces prod-only type/route errors at build time. The
+10-minute Power BI auto-sync (`src/instrumentation.ts`) runs under `npm start`
+exactly as in dev.
 
-To learn more about Next.js, take a look at the following resources:
+**Run it as a durable service** (so it survives logout/reboot) rather than a
+bare `npm start` in a terminal. On this Windows server the simplest options are
+a scheduled task set to run at startup, or a process manager (e.g. `pm2` /
+`nssm` wrapping `npm start`). The app must run on **SERVER-APP1** — it is the
+MySQL host and the TotalETO SQL host (`10.0.0.7`), so both are local.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+If a build ever fails the type check on a `/standard-sheet` route error, delete
+the stale preview build dirs and rebuild: `rm -rf .next .next-preview*` then
+`npm run build`. (They are git-ignored and tsconfig-excluded; this only matters
+if an old dev:preview run left them behind.)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Environment
 
-## Deploy on Vercel
+All secrets live in `.env` (git-ignored): `DATABASE_URL`, the `PBI_*` Power BI
+service-principal credentials, `TOTALETO_DB_*`, `AUTH_*` (next-auth + Entra),
+and the Standard-Sheet / Audit-Log gate passwords. See `.env` for the full set.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Tests
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npm test           # node:test unit tests for the ETC / Standard Fees math
+```
+
+## Data sources & freshness
+
+- **Hours worked, quoted hours, ETC history, Standard Fees** — pulled from the
+  Power BI semantic model (Fabric warehouse + SharePoint) every 10 minutes.
+- **Jobs / costing** — synced from TotalETO directly (`src/lib/sync-totaleto.ts`).
+- The ETC header shows a red banner if Power BI's own upstream dataset refresh
+  is failing, so stale-upstream data never goes unnoticed.
+
+The committed `Job Hours Report - *.Report` / `.SemanticModel` folders are the
+Power BI source of truth this app replicates; the `.SemanticModel` TMDL holds
+every measure's DAX and was used to verify the app's calculations 1:1.
