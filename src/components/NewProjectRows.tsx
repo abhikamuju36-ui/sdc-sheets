@@ -15,15 +15,18 @@ type PhaseGroup = { phase: string; sections: { code: string; name: string }[] };
 export function NewProjectRows({
   phaseGroups,
   allStatuses,
-  showJobName = true,
+  hidden = [],
 }: {
   phaseGroups: PhaseGroup[];
   allStatuses: string[];
-  // Mirrors the page's Job column toggle — a hidden Job column means no name
-  // cell here either (saveNewRows defaults a blank name to the Job Id).
-  showJobName?: boolean;
+  // Mirrors the page's "Columns" dropdown — hidden info columns are omitted
+  // from the add-project row too, so it stays column-aligned with the grid
+  // (saveNewRows defaults blank Name/Customer/etc. sensibly).
+  hidden?: string[];
 }) {
   const tempIds = useNewProjectRowIds();
+  const hiddenSet = new Set(hidden);
+  const show = (key: string) => !hiddenSet.has(key);
 
   return (
     <>
@@ -52,7 +55,7 @@ export function NewProjectRows({
               className="w-full min-w-0 text-center font-semibold"
             />
           </td>
-          {showJobName && (
+          {show("job") && (
             <td
               style={{ width: "var(--job-col-width, 280px)", minWidth: "var(--job-col-width, 280px)" }}
               className="sticky left-[112px] z-10 whitespace-nowrap border-l border-r border-sdc-border bg-sdc-yellow-bg/60 px-2 py-1.5 text-center text-[10px] font-medium text-sdc-navy"
@@ -66,40 +69,52 @@ export function NewProjectRows({
               />
             </td>
           )}
-          <td className="whitespace-nowrap px-2 py-1.5 text-center text-[10px] text-sdc-gray-600">
-            <input type="text" name={`newRow__${tempId}__customer`} placeholder="—" aria-label="New project Customer" className="text-center" />
-          </td>
-          <td className="whitespace-nowrap px-2 py-1.5 text-center text-[10px] text-sdc-gray-600">
-            <select name={`newRow__${tempId}__type`} defaultValue="" aria-label="New project Type" className="text-center">
-              <option value="">—</option>
-              {VALID_JOB_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-          </td>
-          <td className="whitespace-nowrap px-2 py-1.5 text-center text-[10px]">
-            <select name={`newRow__${tempId}__billable`} defaultValue="Billable" aria-label="New project Billable" className="text-center">
-              <option value="Billable">Billable</option>
-              <option value="Non-Billable">Non-Billable</option>
-            </select>
-          </td>
-          <td className="whitespace-nowrap px-2 py-1.5 text-center text-[10px] font-medium text-sdc-blue-dark">
-            <select name={`newRow__${tempId}__status`} defaultValue="Active" aria-label="New project Status" className="text-center">
-              {allStatuses.map((st) => (
-                <option key={st} value={st}>
-                  {st}
-                </option>
-              ))}
-            </select>
-          </td>
-          <td className="whitespace-nowrap px-2 py-1.5 text-center text-[10px] text-sdc-gray-500">
-            <DateCell name={`newRow__${tempId}__startDate`} defaultValue="" ariaLabel="New project Start Date" />
-          </td>
-          <td className="whitespace-nowrap px-2 py-1.5 text-center text-[10px] text-sdc-gray-500">
-            <DateCell name={`newRow__${tempId}__completeDate`} defaultValue="" ariaLabel="New project Complete Date" />
-          </td>
+          {show("customer") && (
+            <td className="whitespace-nowrap px-2 py-1.5 text-center text-[10px] text-sdc-gray-600">
+              <input type="text" name={`newRow__${tempId}__customer`} placeholder="—" aria-label="New project Customer" className="text-center" />
+            </td>
+          )}
+          {show("type") && (
+            <td className="whitespace-nowrap px-2 py-1.5 text-center text-[10px] text-sdc-gray-600">
+              <select name={`newRow__${tempId}__type`} defaultValue="" aria-label="New project Type" className="text-center">
+                <option value="">—</option>
+                {VALID_JOB_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </td>
+          )}
+          {show("billable") && (
+            <td className="whitespace-nowrap px-2 py-1.5 text-center text-[10px]">
+              <select name={`newRow__${tempId}__billable`} defaultValue="Billable" aria-label="New project Billable" className="text-center">
+                <option value="Billable">Billable</option>
+                <option value="Non-Billable">Non-Billable</option>
+              </select>
+            </td>
+          )}
+          {show("status") && (
+            <td className="whitespace-nowrap px-2 py-1.5 text-center text-[10px] font-medium text-sdc-blue-dark">
+              <select name={`newRow__${tempId}__status`} defaultValue="Active" aria-label="New project Status" className="text-center">
+                {allStatuses.map((st) => (
+                  <option key={st} value={st}>
+                    {st}
+                  </option>
+                ))}
+              </select>
+            </td>
+          )}
+          {show("startDate") && (
+            <td className="whitespace-nowrap px-2 py-1.5 text-center text-[10px] text-sdc-gray-500">
+              <DateCell name={`newRow__${tempId}__startDate`} defaultValue="" ariaLabel="New project Start Date" />
+            </td>
+          )}
+          {show("completeDate") && (
+            <td className="whitespace-nowrap px-2 py-1.5 text-center text-[10px] text-sdc-gray-500">
+              <DateCell name={`newRow__${tempId}__completeDate`} defaultValue="" ariaLabel="New project Complete Date" />
+            </td>
+          )}
           {phaseGroups.map((g) =>
             g.sections.length ? (
               <Fragment key={g.phase}>

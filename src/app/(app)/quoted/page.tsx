@@ -5,7 +5,7 @@ import { SECTIONS, PHASE_GROUPS } from "@/lib/sections";
 import { PageTitle } from "@/components/ui/Typography";
 import { TABLE_HEADER_ROW, TABLE_GRID, BUTTON_PRIMARY } from "@/components/ui/classnames";
 import { PhaseColumnPicker } from "@/components/PhaseColumnPicker";
-import { JobNameToggle } from "@/components/JobNameToggle";
+import { ColumnToggle } from "@/components/ColumnToggle";
 import { MultiSelectFilter } from "@/components/MultiSelectFilter";
 import { SortButton } from "@/components/SortButton";
 import { AddProjectButton } from "@/components/AddProjectButton";
@@ -62,6 +62,19 @@ type SortKey = (typeof SORT_KEYS)[number];
 
 const BILLABLE_OPTIONS = ["Billable", "Non-Billable"];
 
+// Info columns the "Columns" dropdown can show/hide. # and Job Id always
+// show (row identity); phase section columns have their own phase pickers;
+// the two Cost columns are the grid's whole point, so neither is toggleable.
+const TOGGLE_COLUMNS = [
+  { key: "job", label: "Job" },
+  { key: "customer", label: "Customer" },
+  { key: "type", label: "Type" },
+  { key: "billable", label: "Billable" },
+  { key: "status", label: "Status" },
+  { key: "startDate", label: "Start Date" },
+  { key: "completeDate", label: "Complete Date" },
+] as const;
+
 export default async function QuotedPage({
   searchParams,
 }: {
@@ -73,12 +86,14 @@ export default async function QuotedPage({
     types?: string;
     statuses?: string;
     billables?: string;
-    jobname?: string;
+    hide?: string;
   }>;
 }) {
-  const { cols, sort, dir, customers, types, statuses, billables, jobname } = await searchParams;
-  // Job column toggle — shown unless ?jobname=0 (same control as /etc).
-  const showJobName = jobname !== "0";
+  const { cols, sort, dir, customers, types, statuses, billables, hide } = await searchParams;
+  // Column show/hide — `hide` is a comma-separated list of hidden column
+  // keys (absent = all shown). Drives the "Columns" dropdown.
+  const hiddenCols = new Set((hide ?? "").split(",").filter(Boolean));
+  const show = (key: string) => !hiddenCols.has(key);
   // No `cols` param at all (first visit) defaults to every section visible;
   // an explicit (possibly empty) `cols` value means the user has picked some.
   const visibleCodes = cols === undefined ? SECTIONS.map((s) => s.code) : cols.split(",").filter(Boolean);
@@ -191,7 +206,7 @@ export default async function QuotedPage({
             visibleCodes={visibleCodes}
           />
         ))}
-        <JobNameToggle show={showJobName} label="Job" />
+        <ColumnToggle columns={[...TOGGLE_COLUMNS]} hidden={[...hiddenCols]} />
       </div>
 
       <form action={saveQuotedHours}>
@@ -205,7 +220,7 @@ export default async function QuotedPage({
               <th rowSpan={3} className="sticky left-8 z-10 w-20 min-w-20 max-w-20 overflow-hidden truncate bg-sdc-gray-100 px-2 py-2 align-bottom">
                 <SortButton sortKey="jobId" label="Job Id" currentSort={sortKey} currentDir={sortDir} />
               </th>
-              {showJobName && (
+              {show("job") && (
                 <th
                   rowSpan={3}
                   style={{ width: "var(--job-col-width, 280px)", minWidth: "var(--job-col-width, 280px)" }}
@@ -222,24 +237,36 @@ export default async function QuotedPage({
                   />
                 </th>
               )}
-              <th rowSpan={3} className="px-2 py-2 align-bottom">
-                Customer
-              </th>
-              <th rowSpan={3} className="px-2 py-2 align-bottom">
-                Type
-              </th>
-              <th rowSpan={3} className="px-2 py-2 align-bottom">
-                Billable
-              </th>
-              <th rowSpan={3} className="px-2 py-2 align-bottom">
-                <SortButton sortKey="status" label="Status" currentSort={sortKey} currentDir={sortDir} />
-              </th>
-              <th rowSpan={3} className="px-2 py-2 align-bottom">
-                <SortButton sortKey="startDate" label="Start Date" currentSort={sortKey} currentDir={sortDir} />
-              </th>
-              <th rowSpan={3} className="px-2 py-2 align-bottom">
-                <SortButton sortKey="completeDate" label="Complete Date" currentSort={sortKey} currentDir={sortDir} />
-              </th>
+              {show("customer") && (
+                <th rowSpan={3} className="px-2 py-2 align-bottom">
+                  Customer
+                </th>
+              )}
+              {show("type") && (
+                <th rowSpan={3} className="px-2 py-2 align-bottom">
+                  Type
+                </th>
+              )}
+              {show("billable") && (
+                <th rowSpan={3} className="px-2 py-2 align-bottom">
+                  Billable
+                </th>
+              )}
+              {show("status") && (
+                <th rowSpan={3} className="px-2 py-2 align-bottom">
+                  <SortButton sortKey="status" label="Status" currentSort={sortKey} currentDir={sortDir} />
+                </th>
+              )}
+              {show("startDate") && (
+                <th rowSpan={3} className="px-2 py-2 align-bottom">
+                  <SortButton sortKey="startDate" label="Start Date" currentSort={sortKey} currentDir={sortDir} />
+                </th>
+              )}
+              {show("completeDate") && (
+                <th rowSpan={3} className="px-2 py-2 align-bottom">
+                  <SortButton sortKey="completeDate" label="Complete Date" currentSort={sortKey} currentDir={sortDir} />
+                </th>
+              )}
               {PHASE_GROUPS.map((g) => {
                 const visible = visibleSectionsByPhase.get(g.phase) ?? [];
                 const color = PHASE_HEADER_COLOR[g.phase] ?? "bg-sdc-blue-light";
@@ -310,13 +337,14 @@ export default async function QuotedPage({
           </thead>
           <tbody>
             <NewProjectRows
-              showJobName={showJobName}
+              hidden={[...hiddenCols]}
               phaseGroups={PHASE_GROUPS.map((g) => ({ phase: g.phase, sections: visibleSectionsByPhase.get(g.phase) ?? [] }))}
               allStatuses={allStatuses}
             />
             {jobs.length === 0 && (
               <tr>
-                <td colSpan={(showJobName ? 9 : 8) + dataColumnCount + 2} className="px-4 py-5 text-center text-sdc-gray-400">
+                {/* 2 always-on (# + Job Id) + visible toggle columns + phase cols + 2 cost cols */}
+                <td colSpan={2 + TOGGLE_COLUMNS.filter((c) => show(c.key)).length + dataColumnCount + 2} className="px-4 py-5 text-center text-sdc-gray-400">
                   No jobs found.
                 </td>
               </tr>
@@ -341,7 +369,7 @@ export default async function QuotedPage({
                   >
                     {job.jobId}
                   </td>
-                  {showJobName && (
+                  {show("job") && (
                     <td
                       style={{ width: "var(--job-col-width, 280px)", minWidth: "var(--job-col-width, 280px)" }}
                       className={`sticky left-[112px] z-10 whitespace-nowrap border-l border-r border-sdc-border px-2 py-1.5 text-center text-[10px] font-medium text-sdc-navy ${zebraSticky}`}
@@ -355,75 +383,87 @@ export default async function QuotedPage({
                       />
                     </td>
                   )}
-                  <td className="whitespace-nowrap px-2 py-1.5 text-center text-[10px] text-sdc-gray-600">
-                    <input
-                      type="text"
-                      name={`jobField__${job.id}__customer`}
-                      defaultValue={job.customer ?? ""}
-                      placeholder="—"
-                      aria-label={`Customer, ${job.jobName}`}
-                      className="text-center"
-                    />
-                  </td>
-                  <td className="whitespace-nowrap px-2 py-1.5 text-center text-[10px] text-sdc-gray-600">
-                    <select name={`jobField__${job.id}__type`} defaultValue={job.type ?? ""} aria-label={`Type, ${job.jobName}`} className="text-center">
-                      {job.type == null && <option value="">—</option>}
-                      {VALID_JOB_TYPES.map((t) => (
-                        <option key={t} value={t}>
-                          {t}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="whitespace-nowrap px-2 py-1.5 text-center text-[10px]">
-                    {isSdc ? (
-                      <span className="text-sdc-gray-500" aria-label={`Billable, ${job.jobName}`} title="SDC's own projects are always non-billable">
-                        Non-Billable
-                      </span>
-                    ) : (
-                      <select
-                        name={`jobField__${job.id}__billable`}
-                        defaultValue={job.billable ? "Billable" : "Non-Billable"}
-                        aria-label={`Billable, ${job.jobName}`}
-                        className={`text-center ${job.billable ? "text-sdc-green-text" : "text-sdc-gray-500"}`}
-                      >
-                        <option value="Billable">Billable</option>
-                        <option value="Non-Billable">Non-Billable</option>
+                  {show("customer") && (
+                    <td className="whitespace-nowrap px-2 py-1.5 text-center text-[10px] text-sdc-gray-600">
+                      <input
+                        type="text"
+                        name={`jobField__${job.id}__customer`}
+                        defaultValue={job.customer ?? ""}
+                        placeholder="—"
+                        aria-label={`Customer, ${job.jobName}`}
+                        className="text-center"
+                      />
+                    </td>
+                  )}
+                  {show("type") && (
+                    <td className="whitespace-nowrap px-2 py-1.5 text-center text-[10px] text-sdc-gray-600">
+                      <select name={`jobField__${job.id}__type`} defaultValue={job.type ?? ""} aria-label={`Type, ${job.jobName}`} className="text-center">
+                        {job.type == null && <option value="">—</option>}
+                        {VALID_JOB_TYPES.map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
                       </select>
-                    )}
-                  </td>
-                  <td
-                    className={`whitespace-nowrap px-2 py-1.5 text-center text-[10px] font-medium ${
-                      job.status === "Complete" ? "text-sdc-green-text" : "text-sdc-blue-dark"
-                    }`}
-                  >
-                    <select
-                      name={`jobField__${job.id}__status`}
-                      defaultValue={job.status}
-                      aria-label={`Status, ${job.jobName}`}
-                      className="text-center"
+                    </td>
+                  )}
+                  {show("billable") && (
+                    <td className="whitespace-nowrap px-2 py-1.5 text-center text-[10px]">
+                      {isSdc ? (
+                        <span className="text-sdc-gray-500" aria-label={`Billable, ${job.jobName}`} title="SDC's own projects are always non-billable">
+                          Non-Billable
+                        </span>
+                      ) : (
+                        <select
+                          name={`jobField__${job.id}__billable`}
+                          defaultValue={job.billable ? "Billable" : "Non-Billable"}
+                          aria-label={`Billable, ${job.jobName}`}
+                          className={`text-center ${job.billable ? "text-sdc-green-text" : "text-sdc-gray-500"}`}
+                        >
+                          <option value="Billable">Billable</option>
+                          <option value="Non-Billable">Non-Billable</option>
+                        </select>
+                      )}
+                    </td>
+                  )}
+                  {show("status") && (
+                    <td
+                      className={`whitespace-nowrap px-2 py-1.5 text-center text-[10px] font-medium ${
+                        job.status === "Complete" ? "text-sdc-green-text" : "text-sdc-blue-dark"
+                      }`}
                     >
-                      {allStatuses.map((st) => (
-                        <option key={st} value={st}>
-                          {st}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="whitespace-nowrap px-2 py-1.5 text-center text-[10px] text-sdc-gray-500">
-                    <DateCell
-                      name={`jobField__${job.id}__startDate`}
-                      defaultValue={dateInputValue(job.startDate)}
-                      ariaLabel={`Start Date, ${job.jobName}`}
-                    />
-                  </td>
-                  <td className="whitespace-nowrap px-2 py-1.5 text-center text-[10px] text-sdc-gray-500">
-                    <DateCell
-                      name={`jobField__${job.id}__completeDate`}
-                      defaultValue={dateInputValue(job.completeDate)}
-                      ariaLabel={`Complete Date, ${job.jobName}`}
-                    />
-                  </td>
+                      <select
+                        name={`jobField__${job.id}__status`}
+                        defaultValue={job.status}
+                        aria-label={`Status, ${job.jobName}`}
+                        className="text-center"
+                      >
+                        {allStatuses.map((st) => (
+                          <option key={st} value={st}>
+                            {st}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                  )}
+                  {show("startDate") && (
+                    <td className="whitespace-nowrap px-2 py-1.5 text-center text-[10px] text-sdc-gray-500">
+                      <DateCell
+                        name={`jobField__${job.id}__startDate`}
+                        defaultValue={dateInputValue(job.startDate)}
+                        ariaLabel={`Start Date, ${job.jobName}`}
+                      />
+                    </td>
+                  )}
+                  {show("completeDate") && (
+                    <td className="whitespace-nowrap px-2 py-1.5 text-center text-[10px] text-sdc-gray-500">
+                      <DateCell
+                        name={`jobField__${job.id}__completeDate`}
+                        defaultValue={dateInputValue(job.completeDate)}
+                        ariaLabel={`Complete Date, ${job.jobName}`}
+                      />
+                    </td>
+                  )}
                   {PHASE_GROUPS.map((g) => {
                     const allSections = SECTIONS.filter((s) => s.phase === g.phase);
                     const visibleSections = visibleSectionsByPhase.get(g.phase) ?? [];
