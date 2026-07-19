@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { runDax } from "@/lib/powerbi-client";
 import { ETC_TRACKED_CODES, PARTS_COST_SECTION } from "@/lib/sections";
 import { calcHoursLeft, suggestNewEtc, round2, hasPublishedHistory, groupStandardFeesRows } from "@/lib/etc";
+import { queryWarehouse } from "@/lib/fabric-warehouse";
 
 // Refreshes historical ETC months from Power BI's "ETC Historical *" measure
 // family — the same numbers the Job Hours Report's "ETC Historical Hours"
@@ -316,13 +317,47 @@ async function syncCategoryPoolHistory(
   monthByPeriodName: Map<string, string>,
   etcAppOwned: Set<string>,
 ): Promise<{ poolMonthsRefreshed: string[]; poolRowsWritten: number; poolMonthsOwnedWithPbiHistoryNow: string[]; poolEntriesReconciled: number }> {
-  const [sfRows, periodKeyRows, snapshotMonths] = await Promise.all([
-    runDax(`EVALUATE 'Standard Fees'`) as Promise<StandardFeesRow[]>,
-    runDax(`
-      EVALUATE SELECTCOLUMNS('Estimated to Complete Period', "Key", 'Estimated to Complete Period'[ETC Period Key], "Name", 'Estimated to Complete Period'[ETC Name])
-    `) as Promise<{ Key: number; Name: string }[]>,
+  // Pool history now comes DIRECTLY from the Fabric warehouse's dbo.StandardFees
+  // (a complete mirror of Power BI's 'Standard Fees' table — verified
+  // 2026-07-19 to match the app's PBI-sourced pools to the cent across every
+  // archived month), not Power BI's dataset. This removes the pool history's
+  // dependency on Power BI's scheduled refresh entirely. Warehouse rows are
+  // mapped into the exact StandardFeesRow shape the logic below already uses,
+  // so the grouping/reconcile/ownership rules are byte-for-byte unchanged.
+  const [whFees, whPeriods, snapshotMonths] = await Promise.all([
+    queryWarehouse<{
+      ETCPeriodKey: number;
+      BillingGroup: string;
+      Department: string;
+      PreviousMonthPulledHours: number | null;
+      NewHoursAddedThisMonth: number | null;
+      HoursAvailable: number | null;
+      HoursWorkedThisMonth: number | null;
+      PulledHours: number | null;
+      NewETCHours: number | null;
+      Rate: number | null;
+      StandardFee: number | null;
+    }>(`SELECT ETCPeriodKey, BillingGroup, Department, PreviousMonthPulledHours, NewHoursAddedThisMonth,
+          HoursAvailable, HoursWorkedThisMonth, PulledHours, NewETCHours, Rate, StandardFee
+        FROM [dbo].[StandardFees]`),
+    queryWarehouse<{ Key: number; Name: string }>(`SELECT [Key], [Name] FROM [dbo].[EstimateToClosePeriod]`),
     prisma.standardSheetSnapshot.findMany({ distinct: ["month"], select: { month: true } }),
   ]);
+
+  const sfRows: StandardFeesRow[] = whFees.map((r) => ({
+    "Standard Fees[ETC Period Key]": r.ETCPeriodKey,
+    "Standard Fees[Billing Group]": r.BillingGroup,
+    "Standard Fees[Department]": r.Department,
+    "Standard Fees[Previous Month Pulled Hours]": r.PreviousMonthPulledHours,
+    "Standard Fees[New Hours Added this Month]": r.NewHoursAddedThisMonth,
+    "Standard Fees[Hours Available]": r.HoursAvailable,
+    "Standard Fees[Hours Worked this Month]": r.HoursWorkedThisMonth,
+    "Standard Fees[Hours being pulled this month]": r.PulledHours,
+    "Standard Fees[New ETC Hours]": r.NewETCHours,
+    "Standard Fees[Rate]": r.Rate,
+    "Standard Fees[Standard Fee]": r.StandardFee,
+  }));
+  const periodKeyRows = whPeriods.map((p) => ({ Key: p.Key, Name: p.Name }));
 
   const monthByKey = new Map(periodKeyRows.map((p) => [p.Key, monthByPeriodName.get(p.Name)]));
   const appOwnedPoolMonths = new Set([...etcAppOwned, ...snapshotMonths.map((s) => s.month)]);
