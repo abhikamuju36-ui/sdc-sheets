@@ -3,6 +3,7 @@ import { VALID_JOB_TYPES, etcActiveJobFilter } from "@/lib/job-filters";
 import { runDax } from "@/lib/powerbi-client";
 import { ETC_TRACKED_CODES, PARTS_COST_SECTION } from "@/lib/sections";
 import { calcHoursLeft, round2, isMonthLocked } from "@/lib/etc";
+import { getPartsCostSpentByJob } from "@/lib/sync-totaleto";
 
 interface HoursActualRow {
   "Job[Job Id]": string;
@@ -212,30 +213,21 @@ export async function syncHoursWorkedFromPowerBi(month: string): Promise<{ rowsU
   return { rowsUpdated, rowsSkipped };
 }
 
-interface PriorEtcCostRow {
-  "Job[Job Id]": string;
-  PriorEtcCost: number;
-}
-
-interface PartCostActualRow {
-  "Job[Job Id]": string;
-  PartCostActual: number;
-}
-
 // "Parts Cost" — a real block in the sheet (Prior ETC / Money Spent Month /
 // Money Left / New ETC / Diff, in dollars, no Engineering/Shop split).
 // Modeled as an EtcEntry row with section = PARTS_COST_SECTION rather than a
 // new table, since the shape matches the hours departments exactly.
 //
-// Prior ETC Cost is NOT month-sliced in the model (confirmed: the sheet's own
-// GETPIVOTDATA call for it has no date filter) — it's a live running balance,
-// re-pulled fresh every refresh rather than carried forward locally the way
-// hours' Prior ETC is. Money Spent Month uses [Part Cost Actual ETC to Date],
-// grouped by month the same way [Hours Actual, Est to Date] already is.
+// Money Spent Month comes DIRECTLY from TotalETO now (getPartsCostSpentByJob),
+// not Power BI — verified 2026-07-19 to match Power BI's [Part Cost Purchased]
+// to the dollar for every real project job, and it removes the last
+// PBI/gateway dependency for the live month. Prior ETC is the app's own prior-
+// month confirmed New ETC (the authoritative running balance now that the
+// monthly review lives in the app); no prior entry -> opens at 0.
 // Creates the row if it doesn't exist yet (unlike the hours sync, which only
 // updates existing rows) since Parts Cost has no EstimatedHours-seeded
 // counterpart from startMonth().
-export async function syncPartsCostFromPowerBi(month: string): Promise<{ rowsUpserted: number }> {
+export async function syncPartsCost(month: string): Promise<{ rowsUpserted: number }> {
   // Same re-check as syncHoursWorkedFromPowerBi: a locked month must never be
   // rewritten, even if it got locked after the caller's own check but before
   // (or during) this function's run.
@@ -245,36 +237,15 @@ export async function syncPartsCostFromPowerBi(month: string): Promise<{ rowsUps
   }
 
   const [year, monthNum] = month.split("-").map(Number);
-
-  const [priorRows, actualRows] = await Promise.all([
-    runDax(`EVALUATE SUMMARIZECOLUMNS('Job'[Job Id], "PriorEtcCost", [ETC Monthly Process - Prior ETC Cost])`) as Promise<
-      PriorEtcCostRow[]
-    >,
-    runDax(`
-      EVALUATE
-      SUMMARIZECOLUMNS(
-        'Job'[Job Id],
-        FILTER(ALL('Date'), 'Date'[Year] = ${year} && 'Date'[Month] = ${monthNum}),
-        "PartCostActual", [Part Cost Actual ETC to Date]
-      )
-    `) as Promise<PartCostActualRow[]>,
-  ]);
-
-  const spentByJobId = new Map(
-    actualRows.filter((r) => r["Job[Job Id]"] != null).map((r) => [String(Number(r["Job[Job Id]"])), r.PartCostActual ?? 0])
-  );
+  const monthStart = new Date(Date.UTC(year, monthNum - 1, 1));
+  const monthEndExclusive = new Date(Date.UTC(year, monthNum, 1));
+  const spentByJobId = await getPartsCostSpentByJob(monthStart, monthEndExclusive);
 
   const jobs = await prisma.job.findMany({ where: etcActiveJobFilter, select: { id: true, jobId: true } });
-  const jobByJobId = new Map(jobs.map((j) => [j.jobId, j]));
 
-  // The app's own prior-month Parts Cost decisions take precedence over
-  // Power BI's live running balance: with the monthly review happening in
-  // the app from July 2026, the prior month's confirmed New ETC IS the
-  // authoritative opening balance (same chain rule as hours and pools).
-  // Power BI's [ETC Monthly Process - Prior ETC Cost] only reflects the
-  // last EXCEL submission pushed to the source warehouse, which lags (or,
-  // post-cutover, never arrives). PBI remains the fallback for jobs with
-  // no prior-month app entry.
+  // Prior ETC = the app's own prior-month confirmed Parts New ETC (same chain
+  // rule as hours and pools). No prior entry -> opens at 0 (a brand-new job's
+  // Parts New ETC is manager-entered anyway).
   const priorMonthParts = await prisma.etcEntry.findMany({
     where: { month: previousMonth(month), section: PARTS_COST_SECTION },
     select: { jobId: true, newEtc: true },
@@ -283,29 +254,26 @@ export async function syncPartsCostFromPowerBi(month: string): Promise<{ rowsUps
 
   let rowsUpserted = 0;
 
-  for (const row of priorRows) {
-    const rawJobId = row["Job[Job Id]"];
-    if (rawJobId == null || row.PriorEtcCost == null) continue;
+  // One PARTS_COST row per active job that has either an opening balance or
+  // money spent this month — skip the all-zero jobs (nothing to show), same
+  // spirit as the history backfill's skip rule.
+  for (const job of jobs) {
+    const priorEtc = priorAppByJobPk.get(job.id) ?? 0;
+    const moneySpent = spentByJobId.get(job.jobId) ?? 0;
 
-    const jobId = String(Number(rawJobId));
-    const job = jobByJobId.get(jobId);
-    if (!job) continue;
-
-    const priorEtc = priorAppByJobPk.get(job.id) ?? row.PriorEtcCost;
-    const moneySpent = spentByJobId.get(jobId) ?? 0;
-
-    // Re-checked per-row, same reason as syncHoursWorkedFromPowerBi: this
-    // specific entry could have been submitted since the loop started. For a
-    // brand-new row (no existing entry), check the month as a whole instead
-    // — a fresh needsReview:true row would silently "unlock" an otherwise
-    // fully-locked month.
     const existing = await prisma.etcEntry.findUnique({
       where: { jobId_section_month: { jobId: job.id, section: PARTS_COST_SECTION, month } },
       select: { needsReview: true },
     });
+
     if (existing) {
+      // Re-checked per-row, same reason as syncHoursWorkedFromPowerBi: this
+      // entry could have been submitted since the loop started.
       if (!existing.needsReview) continue;
     } else {
+      if (priorEtc === 0 && moneySpent === 0) continue; // nothing worth a row yet
+      // A brand-new needsReview:true row would silently "unlock" an otherwise
+      // fully-locked month — refuse if the month is locked right now.
       const monthEntriesNow = await prisma.etcEntry.findMany({ where: { month }, select: { needsReview: true } });
       if (isMonthLocked(monthEntriesNow)) continue;
     }

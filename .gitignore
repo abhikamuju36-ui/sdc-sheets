@@ -57,3 +57,6 @@ next-env.d.ts
 # cache.abf is a multi-MB binary data cache, localSettings.json is per-machine.
 **/.pbi/cache.abf
 **/.pbi/localSettings.json
+
+# Local Power BI gateway installer (not app code)
+on prem gateway/

@@ -2,6 +2,82 @@ import sql from "mssql";
 import { prisma } from "@/lib/prisma";
 import { VALID_JOB_TYPES } from "@/lib/job-filters";
 
+// The exact query Power BI's 'Part Purchase' table runs against this same
+// SQL server (extracted verbatim from the semantic model's TMDL). Verified
+// 2026-07-19: aggregated by job and windowed on Invoiced Date, this matches
+// Power BI's own [Part Cost Purchased] to the dollar for every real project
+// job across Mar/Apr/May 2026 — the only divergences were non-project
+// pseudo-IDs (spare-parts/service buckets) that Power BI's model excludes
+// anyway and that never map to an app Job. Pulling this directly removes the
+// last Power BI / data-gateway dependency for the live ETC month's parts.
+const PART_PURCHASE_SQL = `-- Part Costs
+SELECT
+     [P].[ProjectID] as [Job ID]
+    ,POD.[SpecID] as [Section ID]
+    ,CASE WHEN POD.PurchaseQty >=0 THEN
+        CASE WHEN InvoicedQty > (CASE WHEN RLS.SumOfQtyReceived >= POD.PurchaseQty THEN RLS.SumOfQtyReceived ELSE POD.PurchaseQty END)
+             THEN 0
+             ELSE ((CASE WHEN RLS.SumOfQtyReceived >= POD.PurchaseQty THEN RLS.SumOfQtyReceived ELSE POD.PurchaseQty END) - ISNULL(InvoicedQty,0))
+        END * POD.PurchasePrice * POH.PurchaseCurrRate
+    ELSE
+        CASE WHEN InvoicedQty < (CASE WHEN RLS.SumOfQtyReceived >= POD.PurchaseQty THEN RLS.SumOfQtyReceived ELSE POD.PurchaseQty END)
+             THEN 0
+             ELSE ((CASE WHEN RLS.SumOfQtyReceived <= POD.PurchaseQty THEN RLS.SumOfQtyReceived ELSE POD.PurchaseQty END) - ISNULL(InvoicedQty,0))
+        END * POD.PurchasePrice * POH.PurchaseCurrRate
+    END + ISNULL(INVOICED.TotalInvoicedAmount, 0) AS [Total Price]
+    ,INVOICED.[APDocDate] as [Invoiced Date]
+FROM tblPurchaseOrderHeader POH with(nolock)
+    INNER JOIN tblPurchaseOrderDetails POD with(nolock) ON POH.PurchaseOrderID = POD.PurchaseOrderID
+    LEFT JOIN tblSpec S with(nolock) ON S.SpecID = POD.SpecID AND S.ProjectID = POD.ProjectID
+    LEFT JOIN tblProjects P with(nolock) ON S.ProjectID = P.ProjectID
+    LEFT JOIN ( SELECT APDD.PurchaseDetailID, BatchEntryTypeID, max(APDocDate) as APDocDate, SUM(APDocQty) AS InvoicedQty,
+                    SUM(APDocQty * APDocUnitPrice * (1 - APDocItemPctDisc) * APDocCurrRate) AS TotalInvoicedAmount
+                    FROM tblAPDocumentDetails APDD with(nolock)
+                        INNER JOIN tblAPBatchDocument APBD with(nolock) ON APBD.APDocID = APDD.APDocID
+                    WHERE BatchEntryTypeID NOT IN (2, 3) AND APDD.PurchaseDetailID IS NOT NULL
+                    GROUP BY APDD.PurchaseDetailID, BatchEntryTypeID
+                ) INVOICED ON POD.PurchaseDetailID = INVOICED.PurchaseDetailID
+    LEFT JOIN vwReceiverLogSummed RLS with(nolock) ON RLS.PurchaseDetailID = POD.PurchaseDetailID
+
+UNION ALL
+
+-- Extra Costs
+SELECT
+     [EC].[ProjectID] as [Job ID]
+    ,[EC].[SpecID] as [Section ID]
+    ,[EC].[decExtraCostingValue] as [Total Price]
+    ,[EC].[APDocDate] as [Invoiced Date]
+FROM [dbo].[vwCostingExtraCostsDetailed] [EC] WITH(NOLOCK)`;
+
+// Parts Cost "Money Spent this month" per job, straight from TotalETO —
+// SUM(Total Price) for rows whose Invoiced Date falls in [monthStart,
+// monthEndExclusive). Keyed by numeric Job Id string (e.g. "1150"), matching
+// how the rest of the app keys jobs. A longer request timeout than the
+// project sync since this query fans out across the full PO/AP history.
+export async function getPartsCostSpentByJob(monthStart: Date, monthEndExclusive: Date): Promise<Map<string, number>> {
+  const pool = await sql.connect({ ...config, requestTimeout: 120000 });
+  try {
+    const result = await pool
+      .request()
+      .input("start", sql.DateTime, monthStart)
+      .input("end", sql.DateTime, monthEndExclusive)
+      .query(
+        `WITH pp AS (\n${PART_PURCHASE_SQL}\n)\n` +
+          `SELECT [Job ID] AS JobId, SUM([Total Price]) AS Spent FROM pp ` +
+          `WHERE [Invoiced Date] >= @start AND [Invoiced Date] < @end AND [Job ID] IS NOT NULL ` +
+          `GROUP BY [Job ID]`
+      );
+    const map = new Map<string, number>();
+    for (const r of result.recordset) {
+      const spent = Number(r.Spent);
+      if (Number.isFinite(spent)) map.set(String(Number(r.JobId)), spent);
+    }
+    return map;
+  } finally {
+    await pool.close();
+  }
+}
+
 // Credentials come from the environment, same as every other integration in
 // this app (Power BI, Auth, Standard Sheet password) — this was previously
 // the one exception, with a live username/password hardcoded in this file.

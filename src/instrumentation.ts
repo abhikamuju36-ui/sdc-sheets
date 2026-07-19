@@ -21,7 +21,7 @@ export async function register() {
   if (g.__pbiAutoSyncStarted) return;
   g.__pbiAutoSyncStarted = true;
 
-  const { syncActualHoursFromPowerBi, syncHoursWorkedFromPowerBi, syncPartsCostFromPowerBi, syncCategoryPoolsFromPowerBi, syncQuotedFromPowerBi } =
+  const { syncActualHoursFromPowerBi, syncHoursWorkedFromPowerBi, syncPartsCost, syncCategoryPoolsFromPowerBi, syncQuotedFromPowerBi } =
     await import("@/lib/sync-powerbi");
   const { getLatestRefreshes, triggerDatasetRefresh } = await import("@/lib/powerbi-refresh");
   const { prisma } = await import("@/lib/prisma");
@@ -91,7 +91,7 @@ export async function register() {
       const result = await syncHoursWorkedFromPowerBi(latest.month);
       console.log(`[auto-sync] ETC hours worked (${latest.month}): ${result.rowsUpdated} rows updated, ${result.rowsSkipped} skipped`);
 
-      const parts = await syncPartsCostFromPowerBi(latest.month);
+      const parts = await syncPartsCost(latest.month);
       console.log(`[auto-sync] Parts cost (${latest.month}): ${parts.rowsUpserted} rows upserted`);
 
       // Pools: only while the month's standard sheet is still open (no
