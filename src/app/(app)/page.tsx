@@ -2,7 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { syncFromTotalEto } from "@/lib/sync-totaleto";
-import { syncActualHoursFromPowerBi, syncQuotedFromPowerBi } from "@/lib/sync-powerbi";
+import { syncActualHours, syncQuotedFromPowerBi } from "@/lib/sync-powerbi";
 import { validJobTypeFilter } from "@/lib/job-filters";
 import { PageTitle, SectionTitle } from "@/components/ui/Typography";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -21,7 +21,7 @@ async function runTotalEtoSync() {
 
 async function runPowerBiSync() {
   "use server";
-  await syncActualHoursFromPowerBi();
+  await syncActualHours();
   revalidatePath("/");
 }
 

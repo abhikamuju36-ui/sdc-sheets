@@ -31,6 +31,38 @@ async function getToken(): Promise<string> {
   return result.accessToken;
 }
 
+// ETC period dimension: one row per monthly ETC period. Name is "Apr 2026",
+// Key is a YYYYMM-style int (e.g. 202605). Sorted ascending by key so the
+// immediately-previous period is the prior array element.
+export type EtcPeriod = { key: number; name: string };
+export async function getEtcPeriods(): Promise<EtcPeriod[]> {
+  const rows = await queryWarehouse<{ Key: number; Name: string }>(`SELECT [Key], [Name] FROM [dbo].[EstimateToClosePeriod] ORDER BY [Key]`);
+  return rows.map((r) => ({ key: r.Key, name: r.Name }));
+}
+
+// The 13 ETC section columns in EstimateToClose (plus PartCost), each holding
+// the submitted New ETC value for that job/period/section.
+export const ESTIMATE_TO_CLOSE_SECTIONS = [
+  "10-211", "10-312", "10-313", "10-515", "10-516", "10-517", "10-518", "10-411", "10-412", "40-211", "40-411", "50-211", "50-411",
+] as const;
+
+export type EstimateToCloseRow = { periodKey: number; jobId: string } & Record<string, number>;
+
+// Every submitted ETC snapshot: one row per (period, job) with a column per
+// section + PartCost. Job Id normalized to the app's un-padded string form.
+export async function getEstimateToClose(): Promise<EstimateToCloseRow[]> {
+  const cols = [...ESTIMATE_TO_CLOSE_SECTIONS].map((c) => `[${c}]`).join(", ");
+  const rows = await queryWarehouse<Record<string, unknown>>(
+    `SELECT EstimateToClosePeriodKey, JobID, ${cols}, PartCost FROM [dbo].[EstimateToClose]`
+  );
+  return rows.map((r) => {
+    const out: EstimateToCloseRow = { periodKey: Number(r.EstimateToClosePeriodKey), jobId: String(Number(r.JobID)) } as EstimateToCloseRow;
+    for (const c of ESTIMATE_TO_CLOSE_SECTIONS) out[c] = Number(r[c] ?? 0);
+    out.PartCost = Number(r.PartCost ?? 0);
+    return out;
+  });
+}
+
 // Runs a read-only query against the warehouse and returns the rows. Opens
 // and closes a fresh pool per call — these syncs run on a slow cadence, so
 // pooling isn't worth the added lifecycle complexity.

@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { calcHoursLeft, suggestNewEtc, isMonthLocked, round2, prevMonth, nextMonth, isValidMonth, isSafeForLiveEtcSync } from "@/lib/etc";
 import { etcActiveJobFilter } from "@/lib/job-filters";
-import { syncActualHoursFromPowerBi, syncHoursWorkedFromPowerBi, syncPartsCost } from "@/lib/sync-powerbi";
+import { syncActualHours, syncHoursWorked, syncPartsCost } from "@/lib/sync-powerbi";
 import { syncEtcHistoryFromPowerBi } from "@/lib/sync-etc-history";
 import { ETC_TRACKED_CODES, PARTS_COST_SECTION } from "@/lib/sections";
 import { revalidatePath } from "next/cache";
@@ -408,8 +408,8 @@ export async function syncPowerBiForEtc(month: string, _formData: FormData) {
   await assertCurrentEtcMonth(month);
 
   await seedMonth(month);
-  await syncActualHoursFromPowerBi();
-  await syncHoursWorkedFromPowerBi(month);
+  await syncActualHours();
+  await syncHoursWorked(month);
   await syncPartsCost(month);
   await logAudit({ action: "etc.syncPowerBiForEtc", entityType: "EtcMonth", entityId: month, summary: `Refreshed Power BI data for ETC month ${month}` });
   revalidatePath("/etc");

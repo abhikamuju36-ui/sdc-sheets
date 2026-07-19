@@ -397,7 +397,7 @@ export default async function MonthlyEtcPage({
   // projects a month contains.
   const { where: monthJobWhere, monthIsLocked } = await getEtcMonthJobWhere(month);
 
-  const [jobs, session, lastPowerBiSync, hoursActualFreshness, datasetRefreshHealth] = await Promise.all([
+  const [jobs, session, lastPowerBiSync, hoursActualFreshness] = await Promise.all([
     prisma.job.findMany({
       where: monthJobWhere,
       include: { etcEntries: { where: { month } }, executionRate: true },
@@ -405,12 +405,6 @@ export default async function MonthlyEtcPage({
     auth(),
     prisma.jobMonthlyActualHours.findFirst({ orderBy: { syncedAt: "desc" }, select: { syncedAt: true } }),
     prisma.powerBiFreshness.findUnique({ where: { source: "hours_actual" }, select: { refreshedThrough: true } }),
-    // The dataset's own refresh job, watched by the background auto-sync
-    // loop (instrumentation.ts) — surfaces an upstream refresh failure that
-    // would otherwise silently age every number on this page with no signal
-    // anywhere (confirmed live 2026-07-18: an expired data-source credential
-    // failed the refresh for two days before anyone noticed).
-    prisma.powerBiFreshness.findUnique({ where: { source: "dataset_refresh" }, select: { status: true, checkedAt: true } }),
   ]);
   const role = (session?.user as { role?: string } | undefined)?.role;
 
@@ -637,14 +631,6 @@ export default async function MonthlyEtcPage({
           <> · {`Working Days: ${workingDaysInMonth(month)}`}</>
           {distinctMonths.length === 0 && <> · no ETC history yet</>}
         </span>
-        {datasetRefreshHealth?.status?.startsWith("Failed") && (
-          <span
-            className="rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-700"
-            title={`Power BI's own dataset refresh is failing upstream (${datasetRefreshHealth.status}) — the app is showing the last data it successfully loaded. This needs an admin to check the dataset's data-source credentials in Power BI.`}
-          >
-            ⚠ Power BI refresh failing: {datasetRefreshHealth.status}
-          </span>
-        )}
       </div>
 
       <p className="mb-4 text-xs text-sdc-gray-400">

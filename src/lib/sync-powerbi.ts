@@ -4,51 +4,37 @@ import { runDax } from "@/lib/powerbi-client";
 import { ETC_TRACKED_CODES, PARTS_COST_SECTION } from "@/lib/sections";
 import { calcHoursLeft, round2, isMonthLocked } from "@/lib/etc";
 import { getPartsCostSpentByJob } from "@/lib/sync-totaleto";
+import { fetchJobHoursRows, hoursByJobSection, latestWorkDate, type JobHoursRow } from "@/lib/sharepoint-hours";
 
-interface HoursActualRow {
-  "Job[Job Id]": string;
-  "Date[Year]": number;
-  "Date[Month]": number;
-  ActualHours: number;
-}
-
-// Pulls actual hours worked per job per month from the live Power BI semantic
-// model and upserts into JobMonthlyActualHours. Uses [Hours Actual, Est to
-// Date] — the same measure the legacy "Monthly ETC Process" sheet's
-// PivotTable used for its ETC math — rather than the plain [Hours Actual]
-// measure. Confirmed via live query (2026-07-07) that the measure is
-// self-contained (already scoped by the model's own Date[Is ETC to Date]
-// logic, no extra filter needed) and that it can diverge from [Hours Actual]
-// once the Paylocity feed lands entries dated past the current ETC cutoff —
-// the two happened to match on that date only because no such entries existed yet.
-export async function syncActualHoursFromPowerBi(): Promise<{
+// Actual hours worked per job per month, upserted into JobMonthlyActualHours
+// (the job-level rollup the dashboard / job detail use). Now summed directly
+// from the SharePoint Paylocity export (all tracked sections per job per
+// month) instead of Power BI — same underlying data, no dataset dependency.
+export async function syncActualHours(): Promise<{
   rowsUpserted: number;
   jobsNotFound: number;
   rowsSkippedOverridden: number;
 }> {
-  const dax = `EVALUATE SUMMARIZECOLUMNS('Job'[Job Id], 'Date'[Year], 'Date'[Month], "ActualHours", [Hours Actual, Est to Date])`;
-  const rows = (await runDax(dax)) as HoursActualRow[];
+  const rows = await fetchJobHoursRows();
+  // Sum every tracked section to a per-job, per-month total.
+  const byJobMonth = new Map<string, number>(); // `${jobId}::${YYYY-MM}` -> hours
+  for (const r of rows) {
+    const monthStr = `${r.year}-${String(r.month).padStart(2, "0")}`;
+    const key = `${r.jobId}::${monthStr}`;
+    byJobMonth.set(key, (byJobMonth.get(key) ?? 0) + r.hours);
+  }
 
   let rowsUpserted = 0;
   let jobsNotFound = 0;
   let rowsSkippedOverridden = 0;
 
-  for (const row of rows) {
-    const rawJobId = row["Job[Job Id]"];
-    const year = row["Date[Year]"];
-    const month = row["Date[Month]"];
-    const hours = row.ActualHours;
-    if (rawJobId == null || year == null || month == null || hours == null) continue;
-
-    // Job IDs in Power BI are zero-padded (e.g. "0788"); ours are not ("788").
-    const jobId = String(Number(rawJobId));
+  for (const [key, hours] of byJobMonth) {
+    const [jobId, monthStr] = key.split("::");
     const job = await prisma.job.findUnique({ where: { jobId } });
     if (!job) {
       jobsNotFound++;
       continue;
     }
-
-    const monthStr = `${year}-${String(month).padStart(2, "0")}`;
 
     // Mirrors the legacy "Actual Hours Override" tab: a manually corrected
     // month must not be silently clobbered by the next sync.
@@ -64,42 +50,35 @@ export async function syncActualHoursFromPowerBi(): Promise<{
     await prisma.jobMonthlyActualHours.upsert({
       where: { jobId_month: { jobId: job.id, month: monthStr } },
       update: { actualHours: hours, syncedAt: new Date() },
-      create: { jobId: job.id, month: monthStr, actualHours: hours, source: "power_bi" },
+      create: { jobId: job.id, month: monthStr, actualHours: hours, source: "sharepoint" },
     });
     rowsUpserted++;
   }
 
-  await syncHoursRefreshedThrough();
+  await syncHoursRefreshedThrough(rows);
 
   return { rowsUpserted, jobsNotFound, rowsSkippedOverridden };
 }
 
-interface HoursWorkedBySectionRow {
-  "Job[Job Id]": string;
-  "Function Hierarchy[Section-Function Code]": string;
-  HoursActual: number;
-}
-
-// Pulls actual hours worked per job PER SECTION for `month` and overwrites
-// EtcEntry.hoursWorked directly — unlike syncActualHoursFromPowerBi (which
-// only updates the job-level JobMonthlyActualHours rollup), this is the
-// per-department grain the ETC grid itself needs. Confirmed live that the
-// model can be sliced by 'Function Hierarchy'[Section-Function Code] the
-// same way 'Hours Estimated' already is. Always overwrites on refresh — the
-// manager's "Hours Worked" is meant to always reflect Power BI, not be
-// independently typed in.
+// Actual hours worked per job PER SECTION for `month`, overwriting
+// EtcEntry.hoursWorked directly — the per-department grain the ETC grid
+// needs. Always overwrites on refresh; "Hours Worked" is meant to always
+// reflect the source, not be independently typed in.
 //
-// When Power BI reports hours in a tracked section the job has no entry for
-// (work charged to a section that was never quoted, so startMonth didn't seed
-// it), the entry is CREATED rather than the hours silently dropped — the
-// sheet's pivot copy showed such hours, and the app must too. Prior ETC for
+// Source is now the Paylocity hours export read straight from SharePoint
+// (sharepoint-hours.ts) — no Power BI. Verified 2026-07-19 to reproduce
+// PBI's [Hours Actual] by job/section to the hundredth (May 2026, 127/127).
+//
+// When there are hours in a tracked section the job has no entry for (work
+// charged to a section that was never quoted, so startMonth didn't seed it),
+// the entry is CREATED rather than the hours silently dropped. Prior ETC for
 // these comes from the previous month's entry if one exists, else 0.
-export async function syncHoursWorkedFromPowerBi(month: string): Promise<{ rowsUpdated: number; rowsSkipped: number }> {
+export async function syncHoursWorked(month: string): Promise<{ rowsUpdated: number; rowsSkipped: number }> {
   // Re-checked here, not just trusted from the caller's earlier check — this
-  // sync does one DB round-trip per Power BI row, so it can run long enough
-  // for a manager to Submit and Lock this exact month mid-sync. A locked
-  // month is frozen history (same rule as submitMonth/clearMonth/
-  // syncPowerBiForEtc) and must never be rewritten by a background refresh.
+  // sync does one DB round-trip per row, so it can run long enough for a
+  // manager to Submit and Lock this exact month mid-sync. A locked month is
+  // frozen history (same rule as submitMonth/clearMonth/syncPowerBiForEtc)
+  // and must never be rewritten by a background refresh.
   const monthEntriesAtStart = await prisma.etcEntry.findMany({ where: { month }, select: { needsReview: true } });
   const monthStartedAtStart = monthEntriesAtStart.length > 0;
   if (monthStartedAtStart && isMonthLocked(monthEntriesAtStart)) {
@@ -107,31 +86,15 @@ export async function syncHoursWorkedFromPowerBi(month: string): Promise<{ rowsU
   }
 
   const [year, monthNum] = month.split("-").map(Number);
-  // 'Date' isn't a groupby column here, so the month filter has to be passed
-  // as a filter-table argument to SUMMARIZECOLUMNS, not applied afterward
-  // with FILTER() — the earlier version of this query errored with "A single
-  // value for column 'Year' ... cannot be determined" for exactly that reason.
-  const dax = `
-    EVALUATE
-    SUMMARIZECOLUMNS(
-      'Job'[Job Id], 'Function Hierarchy'[Section-Function Code],
-      FILTER(ALL('Date'), 'Date'[Year] = ${year} && 'Date'[Month] = ${monthNum}),
-      "HoursActual", [Hours Actual, Est to Date]
-    )
-  `;
-  const rows = (await runDax(dax)) as HoursWorkedBySectionRow[];
+  const spentByKey = hoursByJobSection(await fetchJobHoursRows(), year, monthNum);
 
   let rowsUpdated = 0;
   let rowsSkipped = 0;
 
-  for (const row of rows) {
-    const rawJobId = row["Job[Job Id]"];
-    const section = row["Function Hierarchy[Section-Function Code]"];
-    const hours = row.HoursActual;
-    if (rawJobId == null || section == null || hours == null) continue;
+  for (const [key, hours] of spentByKey) {
+    const [jobId, section] = key.split("::");
     if (!ETC_TRACKED_CODES.has(section)) continue; // ignore codes the ETC grid doesn't track
 
-    const jobId = String(Number(rawJobId));
     const job = await prisma.job.findUnique({ where: { jobId } });
     if (!job) {
       rowsSkipped++;
@@ -442,14 +405,13 @@ export async function syncCategoryPoolsFromPowerBi(month: string): Promise<{ poo
   return { poolsUpserted };
 }
 
-// How current the underlying Paylocity/actuals feed itself is (distinct from
-// when the app last asked) — the same [Hours Refreshed Thru] measure the
-// legacy workbooks queried to show managers data freshness. Piggybacks on
-// the actual-hours sync rather than being queried separately, since it's
-// cheap and only meaningful right after a sync anyway.
-async function syncHoursRefreshedThrough(): Promise<void> {
-  const rows = (await runDax(`EVALUATE ROW("RefreshedThru", [Hours Refreshed Thru])`)) as { RefreshedThru: string | null }[];
-  const refreshedThrough = rows[0]?.RefreshedThru;
+// How current the underlying Paylocity feed itself is (distinct from when the
+// app last asked) — the freshness figure managers see. Now the latest Work
+// Date in the SharePoint hours export (the direct equivalent of the old
+// [Hours Refreshed Thru] measure). Takes the already-fetched rows so it
+// doesn't re-download.
+async function syncHoursRefreshedThrough(rows: JobHoursRow[]): Promise<void> {
+  const refreshedThrough = latestWorkDate(rows);
   if (!refreshedThrough) return;
 
   await prisma.powerBiFreshness.upsert({
