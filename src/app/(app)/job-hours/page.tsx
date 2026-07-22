@@ -1,40 +1,59 @@
 import { PageTitle } from "@/components/ui/Typography";
-import { card, INPUT } from "@/components/ui/classnames";
+import { card } from "@/components/ui/classnames";
 import { JobHoursDashboard } from "@/components/JobHoursDashboard";
+import { JobMultiSelect } from "@/components/JobMultiSelect";
 import { listDashboardJobs, getJobHoursDashboard, defaultDashboardJobId } from "@/lib/job-hours-dashboard";
 import { getJobPartsCost, type JobPartsCost } from "@/lib/sync-totaleto";
 import { getExecutionEtcByJob } from "@/lib/execution-etc";
 import { PartsCostSection } from "@/components/PartsCostSection";
 
 // "Job Hour Details" — web recreation of the Power BI "Job Hours Report —
-// Management Level" drillthrough dashboard, scoped to one job. Phase 1: the
-// hours half (KPIs, per-section matrix, Estimate-to-Complete-vs-Actual and
-// by-Billing-Group charts). Parts Cost half is Phase 2.
+// Management Level" drillthrough. Supports one OR many jobs (aggregated), like
+// the report's job slicer. Selected jobs travel in ?jobs=<jobId,jobId,…>.
 export default async function JobHoursPage({
   searchParams,
 }: {
-  searchParams: Promise<{ job?: string }>;
+  searchParams: Promise<{ jobs?: string; job?: string }>;
 }) {
-  const { job: jobParam } = await searchParams;
+  const { jobs: jobsParam, job: legacyJobParam } = await searchParams;
   const jobs = await listDashboardJobs();
-  const selectedId = jobParam ? Number(jobParam) : (await defaultDashboardJobId()) ?? jobs[0]?.id;
-  const data = selectedId ? await getJobHoursDashboard(selectedId) : null;
+  const idByJobId = new Map(jobs.map((j) => [j.jobId, j.id]));
 
-  // Parts Cost — live from TotalETO — plus the parts New ETC (Estimated to
-  // Purchase) for the latest ETC month. Both best-effort: a TotalETO hiccup must
-  // not take down the hours dashboard.
+  // Selected Job Ids (e.g. "1135,1136"). Falls back to the legacy single ?job=
+  // (internal id) param, then to the data-rich default.
+  let selectedJobIds = (jobsParam ?? "").split(",").map((s) => s.trim()).filter((s) => idByJobId.has(s));
+  if (selectedJobIds.length === 0 && legacyJobParam) {
+    const j = jobs.find((x) => x.id === Number(legacyJobParam));
+    if (j) selectedJobIds = [j.jobId];
+  }
+  if (selectedJobIds.length === 0) {
+    const def = await defaultDashboardJobId();
+    const j = jobs.find((x) => x.id === def);
+    if (j) selectedJobIds = [j.jobId];
+  }
+  const selectedInternalIds = selectedJobIds.map((s) => idByJobId.get(s)!).filter((n) => n != null);
+  const data = selectedInternalIds.length ? await getJobHoursDashboard(selectedInternalIds) : null;
+
+  // Parts Cost — live from TotalETO — aggregated across every selected job, plus
+  // the parts New ETC (Estimated to Purchase). Best-effort: a TotalETO hiccup
+  // must not take down the hours dashboard.
   let parts: JobPartsCost | null = null;
   let partsEtc: number | null = null;
   if (data) {
     try {
-      parts = await getJobPartsCost(data.job.jobId);
+      const perJob = await Promise.all(data.jobRefs.map((r) => getJobPartsCost(r.jobId).catch(() => null)));
+      const lines = perJob.filter(Boolean).flatMap((r) => r!.lines);
+      lines.sort((a, b) => (b.purchaseDate ?? "").localeCompare(a.purchaseDate ?? ""));
+      const purchased = lines.reduce((s, l) => s + l.totalPrice, 0);
+      const paid = lines.reduce((s, l) => s + l.invoicedAmount, 0);
+      parts = { purchased, paid, leftToPay: purchased - paid, lines };
     } catch {
       parts = null;
     }
     if (data.kpis.latestEtcMonth) {
       try {
-        const map = await getExecutionEtcByJob([data.job.id], data.kpis.latestEtcMonth);
-        partsEtc = map.get(data.job.id)?.parts ?? null;
+        const map = await getExecutionEtcByJob(data.jobRefs.map((r) => r.id), data.kpis.latestEtcMonth);
+        partsEtc = data.jobRefs.reduce((s, r) => s + (map.get(r.id)?.parts ?? 0), 0);
       } catch {
         partsEtc = null;
       }
@@ -45,24 +64,10 @@ export default async function JobHoursPage({
     <div className="w-full p-6 md:p-8">
       <div className="mb-1 flex flex-wrap items-end justify-between gap-4">
         <PageTitle>Job Hour Details</PageTitle>
-        <form method="get" className="flex items-center gap-2">
-          <label className="text-xs text-sdc-gray-500" htmlFor="job">Job</label>
-          <select
-            id="job"
-            name="job"
-            defaultValue={selectedId ? String(selectedId) : ""}
-            className={`${INPUT} min-w-64`}
-            // Auto-submit on change so picking a job reloads the dashboard.
-            // (Progressive enhancement: a Go button also submits.)
-          >
-            {jobs.map((j) => (
-              <option key={j.id} value={j.id}>
-                {j.jobId} — {j.jobName}
-              </option>
-            ))}
-          </select>
-          <button type="submit" className="rounded-md bg-sdc-blue px-3 py-2 text-sm font-medium text-white">Go</button>
-        </form>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-sdc-gray-500">Jobs</span>
+          <JobMultiSelect jobs={jobs} selected={selectedJobIds} />
+        </div>
       </div>
       <p className="mb-5 text-sm text-sdc-gray-600">
         Quoted vs actual vs estimate-to-complete hours by section and billing group, per job.

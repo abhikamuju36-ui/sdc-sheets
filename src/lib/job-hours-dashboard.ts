@@ -31,6 +31,8 @@ const billingGroupOf = (code: string): "Engineering" | "Shop" =>
 
 export type JobHoursDashboard = {
   job: { id: number; jobId: string; jobName: string; customer: string | null; status: string };
+  // The individual jobs this view aggregates (1+). Used to pull parts cost.
+  jobRefs: { id: number; jobId: string }[];
   kpis: {
     activeJobs: number;
     hoursRefreshedThru: string | null;
@@ -58,7 +60,7 @@ export async function listDashboardJobs(): Promise<{ id: number; jobId: string; 
   });
   return jobs.sort((a, b) => {
     const na = Number(a.jobId), nb = Number(b.jobId);
-    if (Number.isFinite(na) && Number.isFinite(nb)) return nb - na; // newest job first
+    if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb; // Job Id ascending
     return a.jobId.localeCompare(b.jobId);
   });
 }
@@ -80,23 +82,45 @@ export async function defaultDashboardJobId(): Promise<number | null> {
   return null;
 }
 
-export async function getJobHoursDashboard(jobId: number): Promise<JobHoursDashboard | null> {
-  const job = await prisma.job.findUnique({
-    where: { id: jobId },
+// Accepts one or more internal Job ids and aggregates the hours dashboard
+// across them (sections, billing groups, KPIs are summed) — the same way the
+// Power BI job slicer combines multiple jobs.
+export async function getJobHoursDashboard(jobIdOrIds: number | number[]): Promise<JobHoursDashboard | null> {
+  const ids = Array.isArray(jobIdOrIds) ? jobIdOrIds : [jobIdOrIds];
+  const jobs = await prisma.job.findMany({
+    where: { id: { in: ids } },
     select: { id: true, jobId: true, jobName: true, customer: true, status: true },
   });
-  if (!job) return null;
+  if (jobs.length === 0) return null;
+  jobs.sort((a, b) => {
+    const na = Number(a.jobId), nb = Number(b.jobId);
+    return Number.isFinite(na) && Number.isFinite(nb) ? na - nb : a.jobId.localeCompare(b.jobId);
+  });
+  const jobIds = jobs.map((j) => j.id);
 
   const [estimated, entries, activeJobs, freshness, latestEntry] = await Promise.all([
-    prisma.estimatedHours.findMany({ where: { jobId }, select: { section: true, quotedHours: true, actualHistoricalHours: true } }),
+    prisma.estimatedHours.findMany({ where: { jobId: { in: jobIds } }, select: { section: true, quotedHours: true, actualHistoricalHours: true } }),
     prisma.etcEntry.findMany({
-      where: { jobId },
+      where: { jobId: { in: jobIds } },
       select: { section: true, month: true, hoursWorked: true, newEtc: true, newEtcDraft: true, priorEtc: true, needsReview: true },
     }),
     prisma.job.count({ where: { status: "Active", ...validJobTypeFilter } }),
     prisma.powerBiFreshness.findUnique({ where: { source: "hours_actual" }, select: { refreshedThrough: true } }).catch(() => null),
-    prisma.etcEntry.findFirst({ where: { jobId }, orderBy: { month: "desc" }, select: { month: true } }),
+    prisma.etcEntry.findFirst({ where: { jobId: { in: jobIds } }, orderBy: { month: "desc" }, select: { month: true } }),
   ]);
+
+  // Combined display when more than one job is selected.
+  const job =
+    jobs.length === 1
+      ? jobs[0]
+      : {
+          id: jobs[0].id,
+          jobId: jobs.map((j) => j.jobId).join(", "),
+          jobName: `${jobs.length} jobs selected`,
+          customer: null as string | null,
+          status: "—",
+        };
+  const jobRefs = jobs.map((j) => ({ id: j.id, jobId: j.jobId }));
 
   const latestMonth = latestEntry?.month ?? null;
 
@@ -159,6 +183,7 @@ export async function getJobHoursDashboard(jobId: number): Promise<JobHoursDashb
 
   return {
     job,
+    jobRefs,
     kpis: {
       activeJobs,
       hoursRefreshedThru: freshness?.refreshedThrough ? freshness.refreshedThrough.toISOString().slice(0, 10) : null,
