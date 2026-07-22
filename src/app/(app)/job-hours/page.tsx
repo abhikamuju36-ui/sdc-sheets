@@ -42,7 +42,7 @@ export default async function JobHoursPage({
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl p-8">
+    <div className="w-full p-6 md:p-8">
       <div className="mb-1 flex flex-wrap items-end justify-between gap-4">
         <PageTitle>Job Hour Details</PageTitle>
         <form method="get" className="flex items-center gap-2">

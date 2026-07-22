@@ -145,7 +145,7 @@ export function JobHoursDashboard({ data }: { data: DashData }) {
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[2fr_1fr]">
         <div className={card("p-4")}>
           <p className="mb-3 font-heading text-base font-bold tracking-tight text-sdc-navy">Estimate to Complete vs Actual</p>
-          <ResponsiveContainer width="100%" height={340}>
+          <ResponsiveContainer width="100%" height={440}>
             <BarChart data={sectionChart} margin={{ top: 16, right: 8, left: 0, bottom: 40 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
               <XAxis dataKey="name" angle={-30} textAnchor="end" interval={0} height={70} tick={{ fontSize: 11 }} />
@@ -159,7 +159,7 @@ export function JobHoursDashboard({ data }: { data: DashData }) {
         </div>
         <div className={card("p-4")}>
           <p className="mb-3 font-heading text-base font-bold tracking-tight text-sdc-navy">{plannedLabel} and Actual by Billing Group</p>
-          <ResponsiveContainer width="100%" height={340}>
+          <ResponsiveContainer width="100%" height={440}>
             <BarChart data={bgChart} margin={{ top: 16, right: 8, left: 0, bottom: 8 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
               <XAxis dataKey="name" tick={{ fontSize: 11 }} />
