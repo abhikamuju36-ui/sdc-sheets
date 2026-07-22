@@ -2,6 +2,9 @@ import { PageTitle } from "@/components/ui/Typography";
 import { card, INPUT } from "@/components/ui/classnames";
 import { JobHoursDashboard } from "@/components/JobHoursDashboard";
 import { listDashboardJobs, getJobHoursDashboard, defaultDashboardJobId } from "@/lib/job-hours-dashboard";
+import { getJobPartsCost, type JobPartsCost } from "@/lib/sync-totaleto";
+import { getExecutionEtcByJob } from "@/lib/execution-etc";
+import { PartsCostSection } from "@/components/PartsCostSection";
 
 // "Job Hour Details" — web recreation of the Power BI "Job Hours Report —
 // Management Level" drillthrough dashboard, scoped to one job. Phase 1: the
@@ -16,6 +19,27 @@ export default async function JobHoursPage({
   const jobs = await listDashboardJobs();
   const selectedId = jobParam ? Number(jobParam) : (await defaultDashboardJobId()) ?? jobs[0]?.id;
   const data = selectedId ? await getJobHoursDashboard(selectedId) : null;
+
+  // Parts Cost — live from TotalETO — plus the parts New ETC (Estimated to
+  // Purchase) for the latest ETC month. Both best-effort: a TotalETO hiccup must
+  // not take down the hours dashboard.
+  let parts: JobPartsCost | null = null;
+  let partsEtc: number | null = null;
+  if (data) {
+    try {
+      parts = await getJobPartsCost(data.job.jobId);
+    } catch {
+      parts = null;
+    }
+    if (data.kpis.latestEtcMonth) {
+      try {
+        const map = await getExecutionEtcByJob([data.job.id], data.kpis.latestEtcMonth);
+        partsEtc = map.get(data.job.id)?.parts ?? null;
+      } catch {
+        partsEtc = null;
+      }
+    }
+  }
 
   return (
     <div className="mx-auto w-full max-w-6xl p-8">
@@ -55,6 +79,7 @@ export default async function JobHoursPage({
             </p>
           </div>
           <JobHoursDashboard data={data} />
+          <PartsCostSection parts={parts} estimatedToPurchase={partsEtc} />
         </>
       ) : (
         <div className={card("p-8")}>

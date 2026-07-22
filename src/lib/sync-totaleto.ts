@@ -78,6 +78,125 @@ export async function getPartsCostSpentByJob(monthStart: Date, monthEndExclusive
   }
 }
 
+// ── Per-job Parts Cost detail (live) — for the Job Hour Details dashboard ────
+// Per-part line items + rollups, straight from TotalETO, mirroring the Power BI
+// "Parts Cost" table. Part Costs branch joins supplier (tblCompany), item
+// master (manufacturer / part# / category); Extra Costs branch (fees, shipping,
+// tariffs) comes from vwCostingExtraCostsDetailed.
+export type PartsCostLine = {
+  purchaseDate: string | null;
+  invoicedDate: string | null;
+  supplier: string | null;
+  manufacturer: string | null;
+  category: string | null;
+  poNumber: string | null;
+  partNumber: string | null;
+  description: string | null;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number; // "Purchased"
+  invoicedAmount: number; // "Paid"
+};
+
+export type JobPartsCost = {
+  purchased: number;
+  paid: number;
+  leftToPay: number;
+  lines: PartsCostLine[];
+};
+
+// Per-line "purchased" amount — the same remaining-uninvoiced + invoiced formula
+// PART_PURCHASE_SQL aggregates, kept per line here.
+const LINE_TOTAL_PRICE = `
+  CASE WHEN POD.PurchaseQty >= 0 THEN
+    CASE WHEN ISNULL(INV.InvoicedQty,0) > (CASE WHEN RLS.SumOfQtyReceived >= POD.PurchaseQty THEN RLS.SumOfQtyReceived ELSE POD.PurchaseQty END)
+      THEN 0
+      ELSE ((CASE WHEN RLS.SumOfQtyReceived >= POD.PurchaseQty THEN RLS.SumOfQtyReceived ELSE POD.PurchaseQty END) - ISNULL(INV.InvoicedQty,0))
+    END * POD.PurchasePrice * POH.PurchaseCurrRate
+  ELSE
+    CASE WHEN ISNULL(INV.InvoicedQty,0) < (CASE WHEN RLS.SumOfQtyReceived >= POD.PurchaseQty THEN RLS.SumOfQtyReceived ELSE POD.PurchaseQty END)
+      THEN 0
+      ELSE ((CASE WHEN RLS.SumOfQtyReceived <= POD.PurchaseQty THEN RLS.SumOfQtyReceived ELSE POD.PurchaseQty END) - ISNULL(INV.InvoicedQty,0))
+    END * POD.PurchasePrice * POH.PurchaseCurrRate
+  END + ISNULL(INV.TotalInvoicedAmount, 0)`;
+
+const PARTS_DETAIL_SQL = `
+SELECT
+   CONVERT(varchar(10), POH.PurchaseDate, 23) AS PurchaseDate
+  ,CONVERT(varchar(10), INV.APDocDate, 23) AS InvoicedDate
+  ,SUP.CName AS Supplier
+  ,IM.Manufacturer AS Manufacturer
+  ,CAT.CategoryDescription AS Category
+  ,CAST(POH.PurchaseOrderID AS varchar(32)) AS PONumber
+  ,COALESCE(NULLIF(POD.PurchaseSupplierItem,''), IM.ManufacturerPartNumber) AS PartNumber
+  ,COALESCE(NULLIF(POD.PurchaseSupplierDescription,''), IM.ItemDescription) AS Description
+  ,POD.PurchaseQty AS Qty
+  ,(POD.PurchasePrice * POH.PurchaseCurrRate) AS UnitPrice
+  ,(${LINE_TOTAL_PRICE}) AS TotalPrice
+  ,ISNULL(INV.TotalInvoicedAmount, 0) AS InvoicedAmount
+FROM tblPurchaseOrderHeader POH WITH(NOLOCK)
+  INNER JOIN tblPurchaseOrderDetails POD WITH(NOLOCK) ON POH.PurchaseOrderID = POD.PurchaseOrderID
+  LEFT JOIN tblCompany SUP WITH(NOLOCK) ON SUP.CompanyID = POH.PurchaseSupplierID
+  LEFT JOIN tblEngItemMaster IM WITH(NOLOCK) ON IM.ItemID = POD.ItemID
+  LEFT JOIN tlkpItemMaster_Categories CAT WITH(NOLOCK) ON CAT.ItemCategory = IM.ItemCategory
+  LEFT JOIN ( SELECT APDD.PurchaseDetailID, max(APDocDate) AS APDocDate, SUM(APDocQty) AS InvoicedQty,
+                SUM(APDocQty * APDocUnitPrice * (1 - APDocItemPctDisc) * APDocCurrRate) AS TotalInvoicedAmount
+              FROM tblAPDocumentDetails APDD WITH(NOLOCK)
+                INNER JOIN tblAPBatchDocument APBD WITH(NOLOCK) ON APBD.APDocID = APDD.APDocID
+              WHERE BatchEntryTypeID NOT IN (2, 3) AND APDD.PurchaseDetailID IS NOT NULL
+              GROUP BY APDD.PurchaseDetailID ) INV ON POD.PurchaseDetailID = INV.PurchaseDetailID
+  LEFT JOIN vwReceiverLogSummed RLS WITH(NOLOCK) ON RLS.PurchaseDetailID = POD.PurchaseDetailID
+WHERE POD.ProjectID = @job
+
+UNION ALL
+
+SELECT
+   CONVERT(varchar(10), EC.APDocDate, 23) AS PurchaseDate
+  ,CONVERT(varchar(10), EC.APDocDate, 23) AS InvoicedDate
+  ,EC.Vendor AS Supplier
+  ,NULL AS Manufacturer
+  ,EC.APDocDesc AS Category
+  ,CAST(EC.APDocNumber AS varchar(32)) AS PONumber
+  ,EC.PurchaseSupplierItem AS PartNumber
+  ,EC.APDocItemDesc AS Description
+  ,EC.APDocQty AS Qty
+  ,(EC.APDocUnitPrice * EC.APDocCurrRate) AS UnitPrice
+  ,EC.decExtraCostingValue AS TotalPrice
+  ,EC.decExtraCostingValue AS InvoicedAmount
+FROM vwCostingExtraCostsDetailed EC WITH(NOLOCK)
+WHERE EC.ProjectID = @job`;
+
+export async function getJobPartsCost(jobId: string): Promise<JobPartsCost> {
+  const numericJob = Number(jobId);
+  if (!Number.isFinite(numericJob)) return { purchased: 0, paid: 0, leftToPay: 0, lines: [] };
+  const pool = await sql.connect({ ...config, requestTimeout: 120000 });
+  try {
+    const result = await pool.request().input("job", sql.Int, numericJob).query(PARTS_DETAIL_SQL);
+    const lines: PartsCostLine[] = result.recordset.map((r) => ({
+      purchaseDate: r.PurchaseDate ?? null,
+      invoicedDate: r.InvoicedDate ?? null,
+      supplier: r.Supplier ?? null,
+      manufacturer: r.Manufacturer ?? null,
+      category: r.Category ?? null,
+      poNumber: r.PONumber ?? null,
+      partNumber: r.PartNumber ?? null,
+      description: r.Description ?? null,
+      quantity: Number(r.Qty) || 0,
+      unitPrice: Number(r.UnitPrice) || 0,
+      totalPrice: Number(r.TotalPrice) || 0,
+      invoicedAmount: Number(r.InvoicedAmount) || 0,
+    }));
+    // Sort newest purchase first; drop fully-zero noise rows.
+    const meaningful = lines.filter((l) => l.totalPrice !== 0 || l.invoicedAmount !== 0 || l.quantity !== 0);
+    meaningful.sort((a, b) => (b.purchaseDate ?? "").localeCompare(a.purchaseDate ?? ""));
+    const purchased = meaningful.reduce((s, l) => s + l.totalPrice, 0);
+    const paid = meaningful.reduce((s, l) => s + l.invoicedAmount, 0);
+    return { purchased, paid, leftToPay: purchased - paid, lines: meaningful };
+  } finally {
+    await pool.close();
+  }
+}
+
 // Credentials come from the environment, same as every other integration in
 // this app (Power BI, Auth, Standard Sheet password) — this was previously
 // the one exception, with a live username/password hardcoded in this file.
