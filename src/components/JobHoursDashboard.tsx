@@ -144,7 +144,7 @@ export function JobHoursDashboard({ data }: { data: DashData }) {
       {/* Charts */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[2fr_1fr]">
         <div className={card("p-4")}>
-          <p className="mb-3 text-sm font-semibold text-sdc-navy">Estimate to Complete vs Actual</p>
+          <p className="mb-3 font-heading text-base font-bold tracking-tight text-sdc-navy">Estimate to Complete vs Actual</p>
           <ResponsiveContainer width="100%" height={340}>
             <BarChart data={sectionChart} margin={{ top: 16, right: 8, left: 0, bottom: 40 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -158,7 +158,7 @@ export function JobHoursDashboard({ data }: { data: DashData }) {
           </ResponsiveContainer>
         </div>
         <div className={card("p-4")}>
-          <p className="mb-3 text-sm font-semibold text-sdc-navy">{plannedLabel} and Actual by Billing Group</p>
+          <p className="mb-3 font-heading text-base font-bold tracking-tight text-sdc-navy">{plannedLabel} and Actual by Billing Group</p>
           <ResponsiveContainer width="100%" height={340}>
             <BarChart data={bgChart} margin={{ top: 16, right: 8, left: 0, bottom: 8 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -180,9 +180,9 @@ export function JobHoursDashboard({ data }: { data: DashData }) {
 
 function Kpi({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg bg-sdc-blue px-4 py-3 text-white">
-      <p className="font-mono text-2xl font-bold leading-tight">{value}</p>
-      <p className="text-[11px] uppercase tracking-wide opacity-90">{label}</p>
+    <div className={card("p-5")}>
+      <p className="text-xs font-semibold text-sdc-gray-600">{label}</p>
+      <p className="mt-3 font-heading text-[26px] font-bold tracking-tight text-sdc-navy">{value}</p>
     </div>
   );
 }

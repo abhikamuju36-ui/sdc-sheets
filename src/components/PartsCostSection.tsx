@@ -19,8 +19,8 @@ export function PartsCostSection({ parts, estimatedToPurchase }: { parts: JobPar
   const shown = lines.slice(0, ROW_CAP);
 
   return (
-    <div className="mt-6 space-y-4">
-      <p className="text-sm font-semibold text-sdc-navy">Parts Cost</p>
+    <div className="mt-8 space-y-4">
+      <p className="font-heading text-lg font-bold tracking-tight text-sdc-navy">Parts Cost</p>
 
       {/* KPI card */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -77,9 +77,11 @@ export function PartsCostSection({ parts, estimatedToPurchase }: { parts: JobPar
 
 function Kpi({ label, value, tone }: { label: string; value: string; tone?: "green" }) {
   return (
-    <div className={`rounded-lg px-4 py-3 text-white ${tone === "green" ? "bg-sdc-green" : "bg-sdc-blue"}`}>
-      <p className="font-mono text-lg font-bold leading-tight">{value}</p>
-      <p className="text-[11px] uppercase tracking-wide opacity-90">{label}</p>
+    <div className={card("p-5")}>
+      <p className="text-xs font-semibold text-sdc-gray-600">{label}</p>
+      <p className={`mt-3 font-heading text-[22px] font-bold tracking-tight ${tone === "green" ? "text-sdc-green-text" : "text-sdc-navy"}`}>
+        {value}
+      </p>
     </div>
   );
 }
