@@ -271,3 +271,6 @@ tr.row-selected > td:first-child {
 .col-resize-handle:active {
   background-color: rgba(21, 116, 196, 0.35);
 }
+
+/* Projects grid: hide the "/actual" hours suffix when the "Actuals: Off" toggle is set (ShowActualsToggle). */
+body.hide-actuals .actual-suffix { display: none; }

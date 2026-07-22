@@ -34,6 +34,7 @@ export function EtcSectionCells({
   initialDraft,
   initialConfirmed,
   locked,
+  monthComplete,
 }: {
   entryId: number;
   edge: string;
@@ -51,6 +52,12 @@ export function EtcSectionCells({
   // a round-trip would have wiped.
   initialConfirmed: number | null;
   locked: boolean;
+  // False while the month's actuals are still incomplete (Paylocity not yet
+  // refreshed through month-end). When false we do NOT auto-fill the New ETC
+  // carry-forward — the cell stays blank until the month is complete, so a
+  // partial-month value never looks final. Submit still falls back to the
+  // suggestion, so nothing is lost.
+  monthComplete?: boolean;
 }) {
   // Hours Worked Month is no longer manager-editable — it auto-syncs from
   // Power BI on the same cadence as the rest of the live sync (see
@@ -69,7 +76,7 @@ export function EtcSectionCells({
       ? String(initialDraft)
       : initialConfirmed != null
         ? String(initialConfirmed)
-        : initialWorked === 0
+        : monthComplete !== false && initialWorked === 0
           ? String(round2(priorEtc))
           : "",
   );
@@ -77,7 +84,8 @@ export function EtcSectionCells({
 
   const hoursLeft = calcHoursLeft(priorEtc, worked);
   const suggested = suggestNewEtc(priorEtc, worked);
-  const decided = worked === 0 || initialDraft != null || initialConfirmed != null || newEtcTouched;
+  const decided =
+    (monthComplete !== false && worked === 0) || initialDraft != null || initialConfirmed != null || newEtcTouched;
   const newEtcNum = Number(newEtcText);
   const effective = newEtcText.trim() === "" || !Number.isFinite(newEtcNum) ? suggested : newEtcNum;
   const diff = hoursLeft - effective;

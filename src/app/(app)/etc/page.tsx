@@ -596,6 +596,18 @@ export default async function MonthlyEtcPage({
   const locked = isMonthLocked(allEntries);
   const needsReviewCount = allEntries.filter((e) => e.needsReview).length;
 
+  // A month's live actuals are only "complete" once the Paylocity hours are
+  // refreshed through its final calendar day. Until then — for the current,
+  // in-progress month — Money Spent, Parts Cost, and the auto-suggested New ETC
+  // stay blank, so partial mid-month figures don't masquerade as final. Locked
+  // (submitted) and historical months are always complete. This is display-only:
+  // stored values and the submit path are untouched.
+  const [completeYear, completeMonthNum] = month.split("-").map(Number);
+  const monthEndDate = new Date(Date.UTC(completeYear, completeMonthNum, 0)); // last day of the month
+  const hoursRefreshedThrough = hoursActualFreshness?.refreshedThrough ?? null;
+  const monthComplete =
+    locked || isHistoricalMonth || (hoursRefreshedThrough != null && hoursRefreshedThrough >= monthEndDate);
+
   // Grand totals footer, matching the real sheet's row 63 — accumulated as
   // each job row below computes its own values, then rendered once after.
   const sectionGrandTotals = new Map(ETC_SECTIONS.map((s) => [s.code, { prior: 0, worked: 0, newEtc: 0 }]));
@@ -1010,6 +1022,7 @@ export default async function MonthlyEtcPage({
                               initialDraft={draft}
                               initialConfirmed={isHistoricalMonth || entry.submittedAt != null ? round2(Number(entry.newEtc)) : null}
                               locked={locked}
+                              monthComplete={monthComplete}
                             />
                           </Fragment>
                         );
@@ -1035,7 +1048,7 @@ export default async function MonthlyEtcPage({
                               {wholeNum(hoursLeft)}
                             </td>
                             <td className={`border-l border-sdc-border ${newEtcBg(true)} px-1 py-1 text-center text-[10px] font-bold text-sdc-navy`} title={String(round2(totals[group].newEtc))}>
-                              {wholeNum(totals[group].newEtc)}
+                              {monthComplete ? wholeNum(totals[group].newEtc) : "—"}
                             </td>
                             <td
                               className={`border-l border-sdc-border ${diffBg(diff)} px-1 py-1 text-center text-[10px] text-sdc-gray-700`}
@@ -1103,11 +1116,12 @@ export default async function MonthlyEtcPage({
                                       // no-changes resubmit can't replace it with the suggestion.
                                       isHistoricalMonth || partsCostEntry.submittedAt != null
                                       ? String(round2(Number(partsCostEntry.newEtc)))
-                                      : spent === 0
+                                      : // Don't auto-fill until the month's actuals are complete.
+                                        monthComplete && spent === 0
                                         ? String(round2(suggestedCost))
                                         : undefined
                                 }
-                                placeholder={spent === 0 || draftCost != null ? undefined : currency(suggestedCost)}
+                                placeholder={!monthComplete || spent === 0 || draftCost != null ? undefined : currency(suggestedCost)}
                                 disabled={locked}
                                 ariaLabel={`New ETC cost override, ${job.jobName}, Parts Cost`}
                                 currency
@@ -1170,7 +1184,7 @@ export default async function MonthlyEtcPage({
                           >
                             {wholeNum(hoursLeft)}
                           </td>
-                          <td className={`border-l border-sdc-border ${newEtcBg(true)} px-1 py-1 text-center text-[10px] font-bold text-sdc-navy`} title={String(round2(t.newEtc))}>{wholeNum(t.newEtc)}</td>
+                          <td className={`border-l border-sdc-border ${newEtcBg(true)} px-1 py-1 text-center text-[10px] font-bold text-sdc-navy`} title={String(round2(t.newEtc))}>{monthComplete ? wholeNum(t.newEtc) : "—"}</td>
                           <td
                             className={`border-l border-sdc-border ${diffBg(diff)} px-1 py-1 text-center text-[10px] text-sdc-gray-700`}
                             title={`${round2(diff)} = Hours Left (${round2(hoursLeft)}) − New ETC (${round2(t.newEtc)})`}
@@ -1194,7 +1208,7 @@ export default async function MonthlyEtcPage({
                           >
                             {wholeNum(hoursLeft)}
                           </td>
-                          <td className={`border-l border-sdc-border ${newEtcBg(true)} px-1 py-1 text-center text-[10px] font-bold text-sdc-blue-dark`} title={String(round2(t.newEtc))}>{wholeNum(t.newEtc)}</td>
+                          <td className={`border-l border-sdc-border ${newEtcBg(true)} px-1 py-1 text-center text-[10px] font-bold text-sdc-blue-dark`} title={String(round2(t.newEtc))}>{monthComplete ? wholeNum(t.newEtc) : "—"}</td>
                           <td
                             className={`border-l border-sdc-border ${diffBg(diff)} px-1 py-1 text-center text-[10px] text-sdc-gray-700`}
                             title={`${round2(diff)} = Hours Left (${round2(hoursLeft)}) − New ETC (${round2(t.newEtc)})`}
@@ -1211,14 +1225,17 @@ export default async function MonthlyEtcPage({
                       return (
                         <Fragment key="parts-cost-total">
                           <td className={`${PHASE_EDGE} bg-[#5E91D3] px-1 py-1 text-center text-[10px] text-sdc-gray-700`} title={currencyExact(t.prior)}>{currency(t.prior)}</td>
-                          <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1 text-center text-[10px] text-sdc-navy`} title={currencyExact(t.worked)}>{currency(t.worked)}</td>
+                          {/* Total Money Spent is ALWAYS the live month-to-date
+                              total, even while per-job cells are blanked pending
+                              month completion. */}
+                          <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1 text-center text-[10px] text-sdc-navy`} title={`${currencyExact(t.worked)} — live month-to-date total`}>{currency(t.worked)}</td>
                           <td
                             className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-1 py-1 text-center text-[10px] text-sdc-navy`}
                             title={`${currencyExact(moneyLeft)} = Prior ETC (${currencyExact(t.prior)}) − Money Spent (${currencyExact(t.worked)})`}
                           >
                             {currency(moneyLeft)}
                           </td>
-                          <td className={`border-l border-sdc-border ${newEtcBg(true)} px-1 py-1 text-center text-[10px] font-bold text-sdc-navy`} title={currencyExact(t.newEtc)}>{currency(t.newEtc)}</td>
+                          <td className={`border-l border-sdc-border ${newEtcBg(true)} px-1 py-1 text-center text-[10px] font-bold text-sdc-navy`} title={currencyExact(t.newEtc)}>{monthComplete ? currency(t.newEtc) : "—"}</td>
                           <td
                             className={`border-l border-sdc-border ${diffBg(diffCost)} px-1 py-1 text-center text-[10px] text-sdc-gray-700`}
                             title={`${currencyExact(diffCost)} = Money Left (${currencyExact(moneyLeft)}) − New ETC (${currencyExact(t.newEtc)})`}

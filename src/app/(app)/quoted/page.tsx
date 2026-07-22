@@ -7,6 +7,7 @@ import { TABLE_HEADER_ROW, TABLE_GRID, BUTTON_PRIMARY, BUTTON_SECONDARY } from "
 import { PhaseColumnPicker } from "@/components/PhaseColumnPicker";
 import { ColumnToggle } from "@/components/ColumnToggle";
 import { GridZoomControls } from "@/components/GridZoomControls";
+import { ShowActualsToggle } from "@/components/ShowActualsToggle";
 import { MultiSelectFilter } from "@/components/MultiSelectFilter";
 import { SortButton } from "@/components/SortButton";
 import { AddProjectButton } from "@/components/AddProjectButton";
@@ -265,6 +266,7 @@ export default async function QuotedPage({
             visibleCodes={visibleCodes}
           />
         ))}
+        <ShowActualsToggle />
         <ColumnToggle columns={[...TOGGLE_COLUMNS]} hidden={[...hiddenCols]} />
         <GridZoomControls
           rowVar="--quoted-row-py"
@@ -582,10 +584,24 @@ export default async function QuotedPage({
                         {visibleSections.map((s) => {
                           const hours = hoursBySection.get(s.code);
                           const actual = actualBySection.get(s.code) ?? 0;
+                          // Over/under coloring vs quoted, gated by job status:
+                          //  actual > quoted -> red (over); else completed -> green;
+                          //  else (active, at/under quoted) -> yellow. Cells with
+                          //  neither a quote nor an actual stay neutral.
+                          const q = hours != null ? Number(hours) : 0;
+                          const jobDone = job.status === "Complete";
+                          const tone =
+                            q <= 0 && actual <= 0
+                              ? ""
+                              : actual > q
+                                ? "bg-red-100"
+                                : jobDone
+                                  ? "bg-sdc-green-bg/60"
+                                  : "bg-sdc-yellow-bg/50";
                           return (
                             <td
                               key={s.code}
-                              className="qc quoted-actual-cell border-l border-sdc-border px-1 py-1.5 text-center font-mono text-[10px] text-sdc-gray-600"
+                              className={`qc quoted-actual-cell border-l border-sdc-border px-1 py-1.5 text-center font-mono text-[10px] text-sdc-gray-600 ${tone}`}
                               title={`Quoted ${exactHours(hours) ?? "0"} / Actual ${exactHours(actual) ?? "0"}`}
                             >
                               <input
