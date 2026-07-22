@@ -58,6 +58,11 @@ model Employee {
   name         String
   department   String?
   billingGroup String? // e.g. Engineering / Shop
+  // Team grouping, matching the SDC Scheduler app's team_members.discipline
+  // categories: "Project Management" | "Mechanical Engineers" | "Controls
+  // Engineers" | "Builders" | "Electricians". Backfilled once from Scheduler
+  // by name match; managed here going forward.
+  discipline   String?
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -110,6 +115,34 @@ model Job {
   executionRate       ExecutionRate?
   feeAllotments       FeeAllotment[]
   standardSheetSnapshots StandardSheetSnapshot[]
+  projectRelease      ProjectRelease?
+}
+
+// Parsed SDC "Project Release" Word doc, one per Job (replaced on re-upload).
+// The order date, delivery, financial milestones, penalty clause, and the
+// Project Budget image are extracted from the .docx (see lib/project-release.ts)
+// and kept here — separate from Job so the heavy budgetImage isn't loaded on
+// every Job query. receiptOfPo/deliveryDate also feed Job.poStartDate etc. on
+// upload (respecting the manual-edit guards).
+model ProjectRelease {
+  id            Int      @id @default(autoincrement())
+  jobId         Int      @unique
+  job           Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  fileName      String
+  uploadedAt    DateTime @default(now())
+  uploadedBy    String?
+  receiptOfPo   DateTime?
+  deliveryWeeks Int?
+  deliveryDate  String?  // human string as written in the doc, e.g. "January 15 2027"
+  penalty       Boolean  @default(false)
+  penaltyWeeks  Int?
+  milestones    Json?    // [{ pct, label }]
+  budgetImage   String?  @db.LongText // data: URL of the Project Budget picture (.docx only)
+  // Extra parsed fields (PDF releases): jobNumber, jobTitle, buyer, quote,
+  // poNumber, customerContact, warrantyMonths, commercialCost, budget[].
+  details       Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 // Job-level actual hours worked per month, live from Power BI's "Hours

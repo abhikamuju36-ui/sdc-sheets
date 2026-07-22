@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { suggestNewEtc, calcHoursLeft } from "@/lib/etc";
+import { SECTIONS } from "@/lib/sections";
 import { revalidatePath } from "next/cache";
 import { notFound } from "next/navigation";
 import { PageTitle, SectionTitle } from "@/components/ui/Typography";
@@ -7,7 +8,12 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { PillLinks } from "@/components/ui/PillLinks";
 import { card, INPUT, BUTTON_PRIMARY, BUTTON_SECONDARY, LABEL, TABLE_HEADER_ROW, TABLE_GRID, TABLE_CARD } from "@/components/ui/classnames";
 import { saveJobTask, deleteJobTask } from "@/lib/jobtask-actions";
+import { ProjectReleasePanel } from "@/components/ProjectReleasePanel";
 import { Fragment } from "react";
+
+// Section code -> full name (e.g. "10-211" -> "ME General"), for a tooltip on
+// the raw codes printed in the Estimated by Section tab.
+const SECTION_NAME_BY_CODE = new Map(SECTIONS.map((s) => [s.code, s.name]));
 
 const TABS = [
   { key: "etc", label: "ETC & Sections" },
@@ -32,15 +38,17 @@ export default async function JobDetailPage({
   const { id } = await params;
   const { month: monthParam, tab: tabParam } = await searchParams;
   const jobId = Number(id);
+  if (!Number.isInteger(jobId)) notFound();
   const job = await prisma.job.findUnique({ where: { id: jobId } });
   if (!job) notFound();
 
   const tab: TabKey = (TABS.find((t) => t.key === tabParam)?.key ?? "etc") as TabKey;
 
-  const [estimatedHours, tasks, monthlyActualHours] = await Promise.all([
+  const [estimatedHours, tasks, monthlyActualHours, projectRelease] = await Promise.all([
     prisma.estimatedHours.findMany({ where: { jobId }, orderBy: { section: "asc" } }),
     prisma.jobTask.findMany({ where: { jobId }, orderBy: { slot: "asc" } }),
     prisma.jobMonthlyActualHours.findMany({ where: { jobId }, orderBy: { month: "desc" } }),
+    prisma.projectRelease.findUnique({ where: { jobId } }),
   ]);
 
   const currency = (n: number | null) =>
@@ -176,6 +184,8 @@ export default async function JobDetailPage({
           </div>
         )}
       </div>
+
+      <ProjectReleasePanel jobId={jobId} jobName={job.jobName} release={projectRelease} />
 
       <div className="mb-6 inline-flex gap-1 rounded-lg bg-sdc-gray-100 p-1">
         {tabLinks.map((t) => (
@@ -402,7 +412,7 @@ export default async function JobDetailPage({
                 <tbody>
                   {estimatedHours.map((eh, i) => (
                     <tr key={eh.id} className={i % 2 === 1 ? "bg-sdc-gray-50/60" : ""}>
-                      <td className="px-4 py-2 text-center text-[10px] font-medium text-sdc-navy">{eh.section}</td>
+                      <td className="px-4 py-2 text-center text-[10px] font-medium text-sdc-navy" title={SECTION_NAME_BY_CODE.get(eh.section)}>{eh.section}</td>
                       <td className="px-4 py-2 text-center text-[10px]">{eh.quotedHours.toString()}</td>
                       <td className="px-4 py-2 text-center text-[10px]">{eh.actualHistoricalHours.toString()}</td>
                       <td className="px-4 py-2 text-center text-[10px]">{eh.estimateToCompleteHours.toString()}</td>

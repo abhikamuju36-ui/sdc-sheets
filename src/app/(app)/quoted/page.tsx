@@ -3,32 +3,61 @@ import { prisma } from "@/lib/prisma";
 import { validJobTypeFilter, VALID_JOB_TYPES, compareJobIds, isSdcCustomer } from "@/lib/job-filters";
 import { SECTIONS, PHASE_GROUPS } from "@/lib/sections";
 import { PageTitle } from "@/components/ui/Typography";
-import { TABLE_HEADER_ROW, TABLE_GRID, BUTTON_PRIMARY } from "@/components/ui/classnames";
+import { TABLE_HEADER_ROW, TABLE_GRID, BUTTON_PRIMARY, BUTTON_SECONDARY } from "@/components/ui/classnames";
 import { PhaseColumnPicker } from "@/components/PhaseColumnPicker";
 import { ColumnToggle } from "@/components/ColumnToggle";
+import { GridZoomControls } from "@/components/GridZoomControls";
 import { MultiSelectFilter } from "@/components/MultiSelectFilter";
 import { SortButton } from "@/components/SortButton";
 import { AddProjectButton } from "@/components/AddProjectButton";
 import { NewProjectRows } from "@/components/NewProjectRows";
+import { NewFromReleaseButton } from "@/components/NewFromReleaseButton";
 import { DateCell } from "@/components/DateCell";
 import { saveQuotedHours } from "@/lib/quoted-actions";
 
 // Header banding, matching the real "Estimated Hours" tab's column colors
 // exactly (extracted from its theme + explicit fills) — phase row, then a
 // department-band row (Function Group), then the section name.
+// Re-themed to the SDC brand palette (see brand color sheet): phase banners
+// use the bold brand *core* colors, group sub-bands below use lighter brand
+// *tints* so the two-tier header hierarchy reads at a glance. Each value
+// carries its own text color so it can win over the base cell class reliably.
 const PHASE_HEADER_COLOR: Record<string, string> = {
-  "Complete Design & Build": "bg-[#D9D9D9]",
-  "Machine Testing": "bg-[#FBC6BB]",
-  "Teardown & Install": "bg-[#D9D9D9]",
-  Warranty: "bg-[#D9D9D9]",
+  "Complete Design & Build": "bg-sdc-navy text-white", // #061D39 — anchor phase
+  "Machine Testing": "bg-sdc-blue text-white", // #1574C4 — primary brand
+  "Teardown & Install": "bg-sdc-green text-white", // #74C415
+  Warranty: "bg-sdc-yellow text-sdc-navy", // #FFDE51 (dark text for contrast)
 };
+// Row height / column width density controls (GridZoomControls, in the
+// toolbar) work by setting --quoted-row-py/--quoted-col-px on the document
+// root. Row height applies to every body cell uniformly (they're already a
+// consistent py-1.5 today, so nothing changes until a user clicks +/-).
+// Column width only targets cells marked with the "qc" ("quoted column")
+// class below — the repeated per-section header/data columns, which are
+// already a consistent px-1 — deliberately excluding the sticky #/Job Id/Job/
+// Cost columns (own fixed widths) and the optional metadata columns
+// (Customer/Type/Status/Dates, px-2) and phase/group banner headers, whose
+// padding isn't a "column width" in the same sense.
+const ZOOM_CONTROLS = "[&_td]:py-[var(--quoted-row-py,6px)] [&_.qc]:px-[var(--quoted-col-px,4px)]";
+
+// Group sub-bands: lighter SDC brand tints, each distinct, all drawn from the
+// brand palette (blue/green/yellow tints + light blue), with one bold brand
+// blue for the large General Engineering block so it reads as its own zone.
 const GROUP_HEADER_COLOR: Record<string, string> = {
-  PM: "bg-[#C3C9D0]",
-  ME: "bg-[#C3C9D0]",
-  CE: "bg-[#DCEDD5]",
-  "General Engineering": "bg-[#4A5E71] text-white",
-  Shop: "bg-[#F5B493]",
-  Engineering: "bg-[#CCFFFF]",
+  PM: "bg-sdc-gray-100 text-sdc-navy", // neutral brand gray
+  ME: "bg-sdc-blue-light text-sdc-navy", // #e6f0fa
+  CE: "bg-sdc-green-bg text-sdc-navy", // #eef7de
+  "General Engineering": "bg-sdc-blue text-white", // #1574C4
+  Shop: "bg-sdc-yellow-bg text-sdc-navy", // #fff6d6
+  Engineering: "bg-sdc-blue-100 text-sdc-navy", // #aacee8
+};
+// Full names for the department abbreviations above — only defined where the
+// header actually abbreviates something ("General Engineering"/"Shop"/
+// "Engineering" are already spelled out).
+const GROUP_FULL_NAME: Record<string, string> = {
+  PM: "Project Management",
+  ME: "Mechanical Engineering",
+  CE: "Controls Engineering",
 };
 
 // Consecutive runs of the same group within a phase's visible sections, for
@@ -55,6 +84,12 @@ function dateInputValue(d: Date | null): string {
 function wholeHours(n: unknown): string {
   if (n == null) return "—";
   return Math.round(Number(n)).toString();
+}
+// Un-rounded counterpart to wholeHours() above, for tooltips — in case a
+// stored hours value ever carries a fraction.
+function exactHours(n: unknown): string | undefined {
+  if (n == null) return undefined;
+  return Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
 const SORT_KEYS = ["jobId", "status", "startDate", "completeDate"] as const;
@@ -160,7 +195,14 @@ export default async function QuotedPage({
       status: { in: selectedStatuses },
       ...billableWhere,
     },
-    include: { estimatedHours: true },
+    // etcEntries (unfiltered by month) is how "actual hours" gets built below:
+    // a closed/historical job's real total lives entirely in
+    // estimatedHours.actualHistoricalHours (an Excel-migration snapshot, never
+    // touched again once EtcEntry rows exist for it — see sync-powerbi.ts),
+    // while an actively ETC-tracked job's total is the sum of every month's
+    // hoursWorked instead. The two never overlap for the same job, so adding
+    // them is always safe.
+    include: { estimatedHours: true, etcEntries: { select: { section: true, hoursWorked: true } } },
     orderBy: { [sortKey]: sortDir },
   });
   if (sortKey === "jobId") {
@@ -176,21 +218,38 @@ export default async function QuotedPage({
     PHASE_GROUPS.map((g) => [g.phase, SECTIONS.filter((s) => s.phase === g.phase && visibleSet.has(s.code))])
   );
 
-  // Total visible data columns: for each phase, its visible sections + 1 total column
-  // (or just 1 column if every section in that phase is hidden).
+  // Total visible data columns: for each phase, its visible sections + 1 total
+  // column (Machine Testing only — the other phases don't show a Total column),
+  // or just 1 column if every section in that phase is hidden.
   const dataColumnCount = PHASE_GROUPS.reduce((sum, g) => {
     const visible = visibleSectionsByPhase.get(g.phase) ?? [];
-    return sum + (visible.length ? visible.length + 1 : 1);
+    const hasTotalCol = g.phase === "Machine Testing";
+    return sum + (visible.length ? visible.length + (hasTotalCol ? 1 : 0) : 1);
   }, 0);
 
   return (
-    <div className="w-full px-8 py-10 md:px-13 md:py-11">
+    <form action={saveQuotedHours} className="w-full px-8 py-10 md:px-13 md:py-11">
       <div className="mb-1 flex items-end justify-between gap-4">
         <PageTitle>Projects</PageTitle>
-        <AddProjectButton className={BUTTON_PRIMARY} />
+        <div className="flex items-center gap-2.5">
+          <NewFromReleaseButton className={BUTTON_SECONDARY} />
+          <AddProjectButton className={BUTTON_PRIMARY} />
+          <button type="submit" className={BUTTON_PRIMARY}>
+            Save Quoted Hours
+          </button>
+        </div>
       </div>
-      <p className="mb-5 text-sm text-sdc-gray-600">
+      <p className="mb-2 text-sm text-sdc-gray-600">
         {jobs.length} jobs — quoted hours by section, quoted vs. actual cost. Click a phase to choose which section columns to show.
+      </p>
+      <p className="mb-5 flex items-center gap-4 text-xs text-sdc-gray-500">
+        <span className="flex items-center gap-1.5">
+          <span className="font-mono font-semibold text-sdc-blue-dark">000</span> = Quoted hours
+        </span>
+        <span className="text-sdc-gray-400">/</span>
+        <span className="flex items-center gap-1.5">
+          <span className="font-mono font-semibold text-sdc-green-text">000</span> = Actual hours
+        </span>
       </p>
 
       <div className="mb-5 flex flex-wrap gap-2.5">
@@ -207,11 +266,18 @@ export default async function QuotedPage({
           />
         ))}
         <ColumnToggle columns={[...TOGGLE_COLUMNS]} hidden={[...hiddenCols]} />
+        <GridZoomControls
+          rowVar="--quoted-row-py"
+          colVar="--quoted-col-px"
+          rowStorageKey="quoted-grid-row-py"
+          colStorageKey="quoted-grid-col-px"
+          defaultRowPx={6}
+          defaultColPx={4}
+        />
       </div>
 
-      <form action={saveQuotedHours}>
       <div className="max-h-[calc(100vh-220px)] min-w-[480px] overflow-auto rounded-xl border border-sdc-border bg-white shadow-sm select-none styled-scrollbar">
-        <table className={`text-sm ${TABLE_GRID}`}>
+        <table className={`text-sm ${TABLE_GRID} ${ZOOM_CONTROLS}`}>
           <thead className="sticky top-0 z-20 bg-sdc-gray-100">
             <tr className={TABLE_HEADER_ROW}>
               <th rowSpan={3} className="sticky left-0 z-10 w-8 min-w-8 bg-sdc-gray-100 px-1 py-2 text-center align-bottom">
@@ -238,8 +304,20 @@ export default async function QuotedPage({
                 </th>
               )}
               {show("customer") && (
-                <th rowSpan={3} className="px-2 py-2 align-bottom">
+                <th
+                  rowSpan={3}
+                  style={{ width: "var(--customer-col-width, 120px)", minWidth: "var(--customer-col-width, 120px)" }}
+                  className="relative px-2 py-2 align-bottom"
+                >
                   Customer
+                  <div
+                    className="col-resize-handle absolute right-0 inset-y-0 z-10 w-3"
+                    data-resize-var="--customer-col-width"
+                    data-resize-min="80"
+                    data-resize-max="400"
+                    title="Drag to resize"
+                    style={{ touchAction: "none" }}
+                  />
                 </th>
               )}
               {show("type") && (
@@ -270,28 +348,29 @@ export default async function QuotedPage({
               {PHASE_GROUPS.map((g) => {
                 const visible = visibleSectionsByPhase.get(g.phase) ?? [];
                 const color = PHASE_HEADER_COLOR[g.phase] ?? "bg-sdc-blue-light";
+                const hasTotalCol = g.phase === "Machine Testing";
                 return visible.length ? (
                   <th
                     key={g.phase}
-                    colSpan={visible.length + 1}
-                    className={`border-l border-sdc-border px-2 py-2 text-center italic text-sdc-navy ${color}`}
+                    colSpan={visible.length + (hasTotalCol ? 1 : 0)}
+                    className={`border-l border-sdc-border px-2 py-2 text-center italic ${color}`}
                   >
                     {g.phase}
                   </th>
                 ) : (
                   <th
                     key={g.phase}
-                    className={`border-l border-sdc-border px-1.5 py-2 text-center align-bottom italic text-sdc-navy ${color}`}
+                    className={`border-l border-sdc-border px-1.5 py-2 text-center align-bottom italic ${color}`}
                     rowSpan={3}
                   >
                     {g.phase}
                   </th>
                 );
               })}
-              <th rowSpan={3} className="sticky right-[90px] z-10 min-w-[90px] border-l border-sdc-border bg-[#B8DCAB] px-2 py-2 text-center align-bottom">
+              <th rowSpan={3} className="min-w-[90px] border-l border-sdc-border bg-sdc-green-bg px-2 py-2 text-center align-bottom text-sdc-green-text">
                 Cost Quoted
               </th>
-              <th rowSpan={3} className="sticky right-0 z-10 min-w-[90px] bg-[#B8DCAB] px-2 py-2 text-center align-bottom">
+              <th rowSpan={3} className="min-w-[90px] bg-sdc-green-bg px-2 py-2 text-center align-bottom text-sdc-green-text">
                 Cost Actual Historical
               </th>
             </tr>
@@ -299,22 +378,25 @@ export default async function QuotedPage({
               {PHASE_GROUPS.flatMap((g) => {
                 const sections = visibleSectionsByPhase.get(g.phase) ?? [];
                 if (!sections.length) return [];
+                const groupHeaders = groupRuns(sections).map((run, i) => (
+                  <th
+                    key={`${g.phase}-group-${i}`}
+                    colSpan={run.count}
+                    title={GROUP_FULL_NAME[run.group]}
+                    className={`qc border-l border-sdc-border px-1 py-1.5 text-center text-[10px] italic ${
+                      GROUP_HEADER_COLOR[run.group] ?? ""
+                    }`}
+                  >
+                    {run.group}
+                  </th>
+                ));
+                if (g.phase !== "Machine Testing") return groupHeaders;
                 return [
-                  ...groupRuns(sections).map((run, i) => (
-                    <th
-                      key={`${g.phase}-group-${i}`}
-                      colSpan={run.count}
-                      className={`border-l border-sdc-border px-1 py-1.5 text-center text-[10px] italic text-sdc-navy ${
-                        GROUP_HEADER_COLOR[run.group] ?? ""
-                      }`}
-                    >
-                      {run.group}
-                    </th>
-                  )),
+                  ...groupHeaders,
                   <th
                     key={`${g.phase}-total`}
                     rowSpan={2}
-                    className="w-12 border-l border-sdc-border bg-sdc-blue-light px-1 py-2 text-center align-bottom text-[10px] text-sdc-blue-dark"
+                    className="qc w-[78px] min-w-[78px] border-l border-sdc-border bg-sdc-blue-light px-1 py-2 text-center align-bottom text-[10px] text-sdc-blue-dark"
                   >
                     Total
                   </th>,
@@ -325,7 +407,7 @@ export default async function QuotedPage({
               {PHASE_GROUPS.flatMap((g) => {
                 const sections = visibleSectionsByPhase.get(g.phase) ?? [];
                 return sections.map((s) => (
-                  <th key={s.code} title={s.code} className="w-14 border-l border-sdc-border px-1 py-2 text-center text-[10px] leading-tight">
+                  <th key={s.code} title={s.code} className="qc w-[78px] min-w-[78px] border-l border-sdc-border px-1 py-2 text-center text-[10px] leading-tight">
                     {s.name}
                     <span className="block font-mono text-[10px] font-normal normal-case tracking-normal text-sdc-gray-400">
                       {s.code}
@@ -351,6 +433,14 @@ export default async function QuotedPage({
             )}
             {jobs.map((job, i) => {
               const hoursBySection = new Map(job.estimatedHours.map((eh) => [eh.section, eh.quotedHours]));
+              // Actual hours to date, per section: Excel-migration snapshot
+              // (closed jobs) + everything since accumulated via ETC tracking
+              // (active jobs) — see the query comment above for why these
+              // two never double-count.
+              const actualBySection = new Map(job.estimatedHours.map((eh) => [eh.section, Number(eh.actualHistoricalHours)]));
+              for (const e of job.etcEntries) {
+                actualBySection.set(e.section, (actualBySection.get(e.section) ?? 0) + Number(e.hoursWorked));
+              }
               // SDC's own internal projects are always non-billable and get a
               // permanent light-blue highlight so they stand out from customer
               // work at a glance — this is driven by Customer, not the stored
@@ -373,6 +463,7 @@ export default async function QuotedPage({
                     <td
                       style={{ width: "var(--job-col-width, 280px)", minWidth: "var(--job-col-width, 280px)" }}
                       className={`sticky left-[112px] z-10 whitespace-nowrap border-l border-r border-sdc-border px-2 py-1.5 text-center text-[10px] font-medium text-sdc-navy ${zebraSticky}`}
+                      title={job.jobName}
                     >
                       <input
                         type="text"
@@ -384,7 +475,11 @@ export default async function QuotedPage({
                     </td>
                   )}
                   {show("customer") && (
-                    <td className="whitespace-nowrap px-2 py-1.5 text-center text-[10px] text-sdc-gray-600">
+                    <td
+                      style={{ width: "var(--customer-col-width, 120px)", minWidth: "var(--customer-col-width, 120px)", maxWidth: "var(--customer-col-width, 120px)" }}
+                      className="overflow-hidden whitespace-nowrap px-2 py-1.5 text-center text-[10px] text-sdc-gray-600"
+                      title={job.customer ?? ""}
+                    >
                       <input
                         type="text"
                         name={`jobField__${job.id}__customer`}
@@ -468,10 +563,17 @@ export default async function QuotedPage({
                     const allSections = SECTIONS.filter((s) => s.phase === g.phase);
                     const visibleSections = visibleSectionsByPhase.get(g.phase) ?? [];
                     const total = allSections.reduce((sum, s) => sum + Number(hoursBySection.get(s.code) ?? 0), 0);
+                    const actualTotal = allSections.reduce((sum, s) => sum + (actualBySection.get(s.code) ?? 0), 0);
                     if (!visibleSections.length) {
                       return (
-                        <td key={g.phase} className="border-l border-sdc-border px-1 py-1.5 text-center font-mono text-[10px] text-sdc-gray-600">
-                          {wholeHours(total)}
+                        <td
+                          key={g.phase}
+                          className="whitespace-nowrap border-l border-sdc-border px-1 py-1.5 text-center font-mono text-[10px] text-sdc-gray-600"
+                          title={`Quoted ${exactHours(total) ?? "0"} / Actual ${exactHours(actualTotal) ?? "0"}`}
+                        >
+                          <span className="font-semibold text-sdc-blue-dark">{wholeHours(total)}</span>
+                          <span className="text-sdc-gray-400"> / </span>
+                          <span className="font-semibold text-sdc-green-text">{wholeHours(actualTotal)}</span>
                         </td>
                       );
                     }
@@ -479,8 +581,13 @@ export default async function QuotedPage({
                       <Fragment key={g.phase}>
                         {visibleSections.map((s) => {
                           const hours = hoursBySection.get(s.code);
+                          const actual = actualBySection.get(s.code) ?? 0;
                           return (
-                            <td key={s.code} className="border-l border-sdc-border px-1 py-1.5 text-center font-mono text-[10px] text-sdc-gray-600">
+                            <td
+                              key={s.code}
+                              className="qc quoted-actual-cell border-l border-sdc-border px-1 py-1.5 text-center font-mono text-[10px] text-sdc-gray-600"
+                              title={`Quoted ${exactHours(hours) ?? "0"} / Actual ${exactHours(actual) ?? "0"}`}
+                            >
                               <input
                                 type="number"
                                 step="1"
@@ -489,18 +596,28 @@ export default async function QuotedPage({
                                 defaultValue={hours != null ? Math.round(Number(hours)).toString() : ""}
                                 placeholder="—"
                                 aria-label={`Quoted hours, ${job.jobName}, ${s.name}`}
-                                className="text-center"
+                                className="text-center font-semibold text-sdc-blue-dark"
                               />
+                              <span className="actual-suffix text-sdc-gray-400">
+                                /<span className="font-semibold text-sdc-green-text">{wholeHours(actual)}</span>
+                              </span>
                             </td>
                           );
                         })}
-                        <td className="border-l border-sdc-border bg-sdc-blue-light px-1 py-1.5 text-center font-mono text-[10px] font-medium text-sdc-navy">
-                          {wholeHours(total)}
-                        </td>
+                        {g.phase === "Machine Testing" && (
+                          <td
+                            className="qc whitespace-nowrap border-l border-sdc-border bg-sdc-blue-light px-1 py-1.5 text-center font-mono text-[10px] font-medium"
+                            title={`Quoted ${exactHours(total) ?? "0"} / Actual ${exactHours(actualTotal) ?? "0"}`}
+                          >
+                            <span className="font-semibold text-sdc-blue-dark">{wholeHours(total)}</span>
+                            <span className="text-sdc-gray-400"> / </span>
+                            <span className="font-semibold text-sdc-green-text">{wholeHours(actualTotal)}</span>
+                          </td>
+                        )}
                       </Fragment>
                     );
                   })}
-                  <td className={`sticky right-[90px] z-10 whitespace-nowrap border-l border-sdc-border px-2 py-1.5 text-center text-[10px] font-medium text-sdc-navy ${zebraSticky}`}>
+                  <td className={`whitespace-nowrap border-l border-sdc-border px-2 py-1.5 text-center text-[10px] font-medium text-sdc-navy ${zebra}`}>
                     <div className="flex items-center justify-center gap-0.5">
                       <span className="text-sdc-gray-400">$</span>
                       <input
@@ -515,7 +632,7 @@ export default async function QuotedPage({
                       />
                     </div>
                   </td>
-                  <td className={`sticky right-0 z-10 whitespace-nowrap px-2 py-1.5 text-center text-[10px] text-sdc-gray-600 ${zebraSticky}`}>
+                  <td className={`whitespace-nowrap border-l border-sdc-border px-2 py-1.5 text-center text-[10px] text-sdc-gray-600 ${zebra}`}>
                     <div className="flex items-center justify-center gap-0.5">
                       <span className="text-sdc-gray-400">$</span>
                       <input
@@ -536,12 +653,6 @@ export default async function QuotedPage({
           </tbody>
         </table>
       </div>
-      <div className="mt-4">
-        <button type="submit" className={BUTTON_PRIMARY}>
-          Save Quoted Hours
-        </button>
-      </div>
-      </form>
-    </div>
+    </form>
   );
 }
