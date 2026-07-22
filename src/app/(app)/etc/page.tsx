@@ -308,8 +308,12 @@ const SUBGROUP_EDGE = "border-l-8! border-l-[#808080]!";
 // (4px) reproduces the grid's current py-1/px-1 exactly, so nothing changes
 // until a user clicks +/-. `:not sticky` keeps the frozen #/Job Id/Job Name
 // columns — which own their own fixed widths — out of the column control.
+// Row height also scales the in-cell inputs' vertical padding + collapses line
+// height, so at the minimum the rows shrink right down to the gridlines instead
+// of bottoming out at the inputs' own py-1. Column width scales cell + input
+// horizontal padding.
 const ZOOM_CONTROLS =
-  "[&_td]:py-[var(--etc-row-py,4px)] [&_td:not([class*='sticky'])]:px-[var(--etc-col-px,4px)] [&_th:not([class*='sticky'])]:px-[var(--etc-col-px,4px)]";
+  "[&_td]:py-[var(--etc-row-py,4px)] [&_td]:leading-none [&_td_input]:py-[var(--etc-row-py,4px)] [&_td_input]:leading-none [&_td:not([class*='sticky'])]:px-[var(--etc-col-px,4px)] [&_th:not([class*='sticky'])]:px-[var(--etc-col-px,4px)] [&_td_input:not([class*='sticky'])]:px-[var(--etc-col-px,4px)]";
 
 function currentMonth() {
   const d = new Date();
