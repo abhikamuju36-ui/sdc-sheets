@@ -63,6 +63,23 @@ export async function listDashboardJobs(): Promise<{ id: number; jobId: string; 
   });
 }
 
+// Pick a sensible default job for first load: the one with the most worked
+// hours in the latest ETC month (so the dashboard opens on real data instead of
+// an empty service/spare-parts job).
+export async function defaultDashboardJobId(): Promise<number | null> {
+  const latest = await prisma.etcEntry.findFirst({ orderBy: { month: "desc" }, select: { month: true } });
+  if (!latest) return null;
+  const grouped = await prisma.etcEntry.groupBy({
+    by: ["jobId"],
+    where: { month: latest.month },
+    _sum: { hoursWorked: true },
+  });
+  grouped.sort((a, b) => Number(b._sum.hoursWorked ?? 0) - Number(a._sum.hoursWorked ?? 0));
+  const validIds = new Set((await listDashboardJobs()).map((j) => j.id));
+  for (const g of grouped) if (validIds.has(g.jobId)) return g.jobId;
+  return null;
+}
+
 export async function getJobHoursDashboard(jobId: number): Promise<JobHoursDashboard | null> {
   const job = await prisma.job.findUnique({
     where: { id: jobId },

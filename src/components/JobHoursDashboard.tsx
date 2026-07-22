@@ -93,6 +93,12 @@ export function JobHoursDashboard({ data }: { data: DashData }) {
         </div>
       </div>
 
+      {visible.length === 0 ? (
+        <div className={card("p-8")}>
+          <p className="text-center text-sdc-gray-500">No hours recorded for this job yet.</p>
+        </div>
+      ) : (
+      <>
       {/* Per-section matrix: sections as columns, Quoted/Act/Diff each */}
       <div className={`${card("p-0")} overflow-x-auto`}>
         <table className="w-full border-collapse text-xs">
@@ -166,6 +172,8 @@ export function JobHoursDashboard({ data }: { data: DashData }) {
           </ResponsiveContainer>
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 }
