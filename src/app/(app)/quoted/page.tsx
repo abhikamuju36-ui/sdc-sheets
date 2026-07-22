@@ -470,13 +470,28 @@ export default async function QuotedPage({
                       className={`sticky left-[112px] z-10 whitespace-nowrap border-l border-r border-sdc-border px-2 py-1.5 text-center text-[10px] font-medium text-sdc-navy ${zebraSticky}`}
                       title={job.jobName}
                     >
-                      <input
-                        type="text"
-                        name={`jobField__${job.id}__jobName`}
-                        defaultValue={job.jobName}
-                        aria-label={`Job Name, ${job.jobName}`}
-                        className="w-full min-w-0 text-center"
-                      />
+                      <div className="flex min-w-0 items-center gap-1">
+                        <input
+                          type="text"
+                          name={`jobField__${job.id}__jobName`}
+                          defaultValue={job.jobName}
+                          aria-label={`Job Name, ${job.jobName}`}
+                          className="w-full min-w-0 flex-1 text-center"
+                        />
+                        <Link
+                          href={`/job-hours?jobs=${encodeURIComponent(job.jobId)}`}
+                          title={`Open ${job.jobName} in Job Hour Details`}
+                          aria-label={`Open ${job.jobName} in Job Hour Details`}
+                          className="shrink-0 text-sdc-gray-400 hover:text-sdc-blue"
+                        >
+                          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.6">
+                            <line x1="2" y1="14" x2="14" y2="14" strokeLinecap="round" />
+                            <rect x="2.5" y="8" width="2.5" height="5" rx="0.5" />
+                            <rect x="6.75" y="4.5" width="2.5" height="8.5" rx="0.5" />
+                            <rect x="11" y="6.5" width="2.5" height="6.5" rx="0.5" />
+                          </svg>
+                        </Link>
+                      </div>
                     </td>
                   )}
                   {show("customer") && (
