@@ -6,7 +6,7 @@ import { syncActualHours, syncQuotedFromPowerBi } from "@/lib/sync-powerbi";
 import { validJobTypeFilter } from "@/lib/job-filters";
 import { PageTitle, SectionTitle } from "@/components/ui/Typography";
 import { StatusBadge } from "@/components/ui/StatusBadge";
-import { card, BUTTON_PRIMARY, BUTTON_SECONDARY } from "@/components/ui/classnames";
+import { card, BUTTON_PRIMARY } from "@/components/ui/classnames";
 
 function currentMonth() {
   const d = new Date();
@@ -176,9 +176,6 @@ export default async function Home() {
       <div className="mb-7 flex gap-2.5">
         <Link href="/jobs" className={BUTTON_PRIMARY}>
           Manage Jobs
-        </Link>
-        <Link href="/jobs/new" className={BUTTON_SECONDARY}>
-          + New Job
         </Link>
       </div>
 

@@ -1,8 +1,8 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { calcHoursLeft, suggestNewEtc, round2 } from "@/lib/etc";
-import { saveNewEtcDraft } from "@/lib/etc-actions";
+import { markEtcDirty } from "@/lib/etc-dirty-tracker";
 
 const HOURS_WORKED_BG = "bg-[#C7DAF7]";
 const HOURS_LEFT_BG = "bg-[#F1F6FD]";
@@ -74,7 +74,6 @@ export function EtcSectionCells({
           : "",
   );
   const [newEtcTouched, setNewEtcTouched] = useState(false);
-  const lastSaved = useRef(newEtcText);
 
   const hoursLeft = calcHoursLeft(priorEtc, worked);
   const suggested = suggestNewEtc(priorEtc, worked);
@@ -86,41 +85,42 @@ export function EtcSectionCells({
   function handleNewEtcChange(e: React.ChangeEvent<HTMLInputElement>) {
     setNewEtcTouched(true);
     setNewEtcText(e.target.value);
-  }
-
-  async function handleNewEtcBlur() {
-    const raw = newEtcText.trim();
-    if (raw === lastSaved.current) return;
-    const parsed = raw === "" ? null : Number(raw);
-    if (parsed !== null && (!Number.isFinite(parsed) || parsed < 0)) return; // let submit validation surface bad input
-
-    try {
-      await saveNewEtcDraft(entryId, parsed);
-      lastSaved.current = raw;
-    } catch {
-      // Draft save is best-effort; the value still rides along in the form
-      // submission, so a failed autosave never blocks or corrupts anything.
-    }
+    // Nothing persists from typing alone — the toolbar's Save button batch-
+    // saves every currently-typed value across the grid at once. This just
+    // flags that there's something unsaved, for the Save button's
+    // beforeunload "unsaved changes" warning.
+    markEtcDirty();
   }
 
   return (
     <>
-      <td className={`${edge} bg-[#5E91D3] px-1 py-1 text-center text-[10px] text-sdc-gray-700`}>{wholeNum(priorEtc)}</td>
-      <td className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1 text-center text-[10px] text-sdc-navy`}>
+      <td className={`${edge} bg-[#5E91D3] px-1 py-1 text-center text-[10px] text-sdc-gray-700`} title={String(round2(priorEtc))}>
+        {wholeNum(priorEtc)}
+      </td>
+      <td
+        className={`border-l border-sdc-border ${HOURS_WORKED_BG} px-1 py-1 text-center text-[10px] text-sdc-navy`}
+        title={String(worked)}
+      >
         {/* Read-only — auto-synced from Power BI, not manager-editable. The
             hidden input still carries the value into the form submission,
             since submitMonth reads it by `name` unchanged. */}
         <input type="hidden" name={`hoursWorked__${entryId}`} value={String(worked)} />
         {workedDisplay}
       </td>
-      <td className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-1 py-1 text-center text-[10px] text-sdc-gray-500`}>
+      <td
+        className={`border-l border-sdc-border ${HOURS_LEFT_BG} px-1 py-1 text-center text-[10px] text-sdc-gray-500`}
+        title={`${round2(hoursLeft)} = Prior ETC (${round2(priorEtc)}) − Hours Worked (${worked})`}
+      >
         {wholeNum(hoursLeft)}
       </td>
       <td className={`border-l border-sdc-border ${newEtcBg(decided)} px-1 py-1 text-center`}>
         {/* No hours worked -> carry-forward is deterministic, safe to auto-fill.
             Hours worked > 0 -> a manager's judgment call, not auto-filled;
-            flagged yellow so it's obviously not done yet. Typed values
-            autosave on blur so a Refresh can't wipe them. */}
+            flagged yellow so it's obviously not done yet — left with no
+            placeholder hint (rather than showing the suggestion) so the cell
+            reads as genuinely blank until the manager types a value. Typing
+            does NOT autosave — nothing persists until the toolbar's Save
+            button (password-gated) batch-saves the whole grid at once. */}
         <input
           type="number"
           step="0.01"
@@ -128,16 +128,15 @@ export function EtcSectionCells({
           name={`newEtcOverride__${entryId}`}
           value={newEtcText}
           onChange={handleNewEtcChange}
-          onBlur={handleNewEtcBlur}
-          placeholder={decided ? undefined : wholeNum(suggested)}
           disabled={locked}
           aria-label={`New ETC override, ${jobName}, ${sectionName}`}
-          className={`w-12 [appearance:textfield] rounded-md border-none bg-transparent px-1.5 py-1 text-center text-[10px] outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none focus:bg-white focus:shadow-sm ${
-            decided ? "text-sdc-gray-600" : "text-sdc-yellow-text placeholder:text-sdc-yellow-text/60"
-          }`}
+          className="w-12 [appearance:textfield] rounded-md border-none bg-transparent px-1.5 py-1 text-center text-[10px] font-bold text-sdc-gray-600 outline-none placeholder:font-bold placeholder:text-sdc-gray-600 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none focus:bg-white focus:shadow-sm"
         />
       </td>
-      <td className={`border-l border-sdc-border ${diffBg(diff)} px-1 py-1 text-center text-[10px] text-sdc-gray-700`}>
+      <td
+        className={`border-l border-sdc-border ${diffBg(diff)} px-1 py-1 text-center text-[10px] text-sdc-gray-700`}
+        title={`${round2(diff)} = Hours Left (${round2(hoursLeft)}) − New ETC (${round2(effective)})`}
+      >
         {wholeNum(diff)}
       </td>
     </>

@@ -61,9 +61,6 @@ export default async function JobsPage({
           <a href={`/api/jobs/export?${exportQs.toString()}`} className={BUTTON_SECONDARY}>
             Export CSV
           </a>
-          <Link href="/jobs/new" className={BUTTON_PRIMARY}>
-            + New Job
-          </Link>
         </div>
       </div>
 
@@ -123,7 +120,7 @@ export default async function JobsPage({
               <span className="text-sdc-gray-400 tabular-nums">{i + 1}</span>
               <span className="font-mono text-sdc-gray-500 tabular-nums">{job.jobId}</span>
               <span className="flex min-w-0 items-center justify-center gap-2">
-                <span className="truncate font-semibold text-sdc-navy">{job.jobName}</span>
+                <span className="truncate font-semibold text-sdc-navy" title={job.jobName}>{job.jobName}</span>
                 {noUpstreamData && (
                   <span
                     title="No TotalETO or Power BI data has synced for this job yet — check the Job Id matches upstream, or try syncing again."
@@ -133,7 +130,7 @@ export default async function JobsPage({
                   </span>
                 )}
               </span>
-              <span className="truncate text-sdc-gray-600">{job.customer ?? "—"}</span>
+              <span className="truncate text-sdc-gray-600" title={job.customer ?? undefined}>{job.customer ?? "—"}</span>
               <span className="text-sdc-gray-600">{job.type ?? "—"}</span>
               <span
                 className={`flex items-center justify-center gap-1.5 text-[10px] font-semibold ${

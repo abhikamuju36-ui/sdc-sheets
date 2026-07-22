@@ -10,6 +10,7 @@ import { syncEtcHistoryFromPowerBi } from "@/lib/sync-etc-history";
 import { ETC_TRACKED_CODES, PARTS_COST_SECTION } from "@/lib/sections";
 import { revalidatePath } from "next/cache";
 import { logAudit } from "@/lib/audit";
+import { isEtcEditUnlocked, trySetEtcEditUnlocked } from "@/lib/etc-edit-gate";
 
 // Submit and Lock's confirmation gate — an "are you sure" step before
 // freezing a month's numbers, not a real access boundary, so the password is
@@ -346,6 +347,72 @@ export async function saveNewEtcDraft(entryId: number, value: number | null): Pr
     summary: `Draft New ETC ${value === null ? "cleared" : `set to ${round2(value)}`} on entry ${entryId}`,
     metadata: { value },
   });
+}
+
+// The toolbar's Save button for the hour-based department cells
+// (EtcSectionCells) — unlike Parts Cost's EtcDraftInput (which still
+// autosaves per-cell via saveNewEtcDraft on blur), typing in these cells
+// persists nothing on its own; everything currently typed across the whole
+// grid batch-saves in one shot only when this runs. The grid is all one
+// <form>, so every `newEtcOverride__<id>` field the manager has touched (or
+// left alone) already lives in `formData` — this just reads them back.
+//
+// Password-gated the first time each session (see etc-edit-gate.ts): if the
+// unlock cookie isn't already set, `newEtcSavePassword` must match, and a
+// correct one sets the cookie so later clicks this session skip straight to
+// saving. A wrong password saves nothing at all, not even the other fields.
+export async function saveAllNewEtcDrafts(month: string, formData: FormData): Promise<{ ok: boolean }> {
+  if (!(await isEtcEditUnlocked())) {
+    const attempt = String(formData.get("newEtcSavePassword") ?? "");
+    if (!(await trySetEtcEditUnlocked(attempt))) {
+      revalidatePath("/etc");
+      return { ok: false };
+    }
+  }
+
+  const entries = await prisma.etcEntry.findMany({
+    where: { month },
+    select: { id: true, needsReview: true, newEtcDraft: true },
+  });
+
+  const changes: { entryId: number; from: number | null; to: number | null }[] = [];
+  const writes = [];
+  for (const entry of entries) {
+    // Already submitted (a reopened month's untouched entries) — Save only
+    // ever writes drafts, never confirmed history.
+    if (!entry.needsReview) continue;
+
+    const raw = formData.get(`newEtcOverride__${entry.id}`);
+    // Not present at all means this entry wasn't rendered in the current
+    // view (a department Columns filter hid it) — leave it untouched rather
+    // than reading its absence as "clear the draft".
+    if (raw === null) continue;
+
+    const trimmed = String(raw).trim();
+    const nextValue = trimmed === "" ? null : Number(trimmed);
+    if (nextValue !== null && (!Number.isFinite(nextValue) || nextValue < 0)) continue; // skip one bad value, don't abort the whole batch
+
+    const nextDraft = nextValue === null ? null : round2(nextValue);
+    const currentDraft = entry.newEtcDraft != null ? round2(Number(entry.newEtcDraft)) : null;
+    if (nextDraft === currentDraft) continue; // unchanged — skip the write and the audit noise
+
+    changes.push({ entryId: entry.id, from: currentDraft, to: nextDraft });
+    writes.push(prisma.etcEntry.update({ where: { id: entry.id }, data: { newEtcDraft: nextDraft } }));
+  }
+
+  if (writes.length > 0) {
+    await prisma.$transaction(writes);
+    await logAudit({
+      action: "etc.saveAllNewEtcDrafts",
+      entityType: "EtcEntry",
+      entityId: month,
+      summary: `Batch-saved ${changes.length} New ETC draft(s) for ${month}`,
+      metadata: { changes },
+    });
+  }
+
+  revalidatePath("/etc");
+  return { ok: true };
 }
 
 // Admin-only: re-opens a locked (fully-submitted) month for editing.

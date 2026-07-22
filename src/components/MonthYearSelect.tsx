@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { isEtcDirty } from "@/lib/etc-dirty-tracker";
 
 const MONTH_NAMES = [
   "January",
@@ -47,7 +48,16 @@ export function MonthYearSelect({
   const [currentYear, currentMonth] = current.split("-");
   const years = Array.from(new Set(selectable.map((m) => m.slice(0, 4)))).sort().reverse();
 
-  const go = (ym: string) => router.push(`${basePath}?month=${ym}`, { scroll: false });
+  // Switching months remounts the whole grid (key={month} on its form), which
+  // wipes any typed-but-unsaved New ETC values outright — a plain client-side
+  // route change like this never fires the browser's native beforeunload
+  // warning, so this is the only guard that would ever catch it.
+  const go = (ym: string) => {
+    if (isEtcDirty() && !window.confirm("You have unsaved New ETC changes. Switching months will lose them — continue anyway?")) {
+      return;
+    }
+    router.push(`${basePath}?month=${ym}`, { scroll: false });
+  };
 
   // Switching years jumps to that year's latest selectable month.
   const onYearChange = (year: string) => {

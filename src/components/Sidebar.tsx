@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useRef, useState, useSyncExternalStore } from "react";
+import { isEtcDirty } from "@/lib/etc-dirty-tracker";
 
 const COLLAPSE_KEY = "sdc-etc-planner-sidebar-collapsed";
 const WIDTH_KEY = "sdc-etc-planner-sidebar-width";
@@ -110,23 +111,12 @@ const GROUPS: NavGroup[] = [
       {
         href: "/jobs",
         label: "Jobs",
-        isActive: (p) => p === "/jobs" || (p.startsWith("/jobs/") && p !== "/jobs/new"),
+        isActive: (p) => p === "/jobs" || p.startsWith("/jobs/"),
         icon: (
           <Icon>
             <line x1="1.5" y1="3.5" x2="14.5" y2="3.5" strokeLinecap="round" />
             <line x1="1.5" y1="8" x2="14.5" y2="8" strokeLinecap="round" />
             <line x1="1.5" y1="12.5" x2="14.5" y2="12.5" strokeLinecap="round" />
-          </Icon>
-        ),
-      },
-      {
-        href: "/jobs/new",
-        label: "New Job",
-        isActive: (p) => p === "/jobs/new",
-        icon: (
-          <Icon>
-            <line x1="8" y1="2" x2="8" y2="14" strokeLinecap="round" />
-            <line x1="2" y1="8" x2="14" y2="8" strokeLinecap="round" />
           </Icon>
         ),
       },
@@ -229,6 +219,19 @@ export default function Sidebar({
       etcClickCount.current = 0;
     }, 1500);
   }
+
+  // Leaving /etc with unsaved New ETC values (typing alone doesn't autosave —
+  // see EtcSectionCells/SaveEtcDraftsButton) is a plain client-side route
+  // change, so it never fires the browser's native beforeunload warning.
+  // This is the sidebar's equivalent of that warning; every nav item runs it
+  // before whatever else it does (like the /etc triple-click above).
+  function handleNavClick(e: React.MouseEvent, href: string) {
+    if (isEtcDirty() && !window.confirm("You have unsaved New ETC changes that haven't been saved. Leave this page anyway?")) {
+      e.preventDefault();
+      return;
+    }
+    if (href === "/etc") handleEtcClick(e);
+  }
   const collapsed = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const persistedWidth = useSyncExternalStore(subscribeWidth, getWidthSnapshot, getServerWidthSnapshot);
   const [dragWidth, setDragWidth] = useState<number | null>(null);
@@ -282,7 +285,7 @@ export default function Sidebar({
         className={`flex items-center gap-2.5 border-b border-white/10 ${collapsed ? "justify-center px-0 py-4" : "px-4 py-4"}`}
       >
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[9px] bg-sdc-blue">
-          <Image src="/brand/sdc-logo-white.png" alt="SDC" width={20} height={11} unoptimized />
+          <Image src="/brand/sdc-logo-white.png" alt="SDC" width={28} height={15} unoptimized />
         </div>
         {!collapsed && (
           <div className="min-w-0">
@@ -307,7 +310,7 @@ export default function Sidebar({
                   <Link
                     key={item.href}
                     href={item.href}
-                    onClick={item.href === "/etc" ? handleEtcClick : undefined}
+                    onClick={(e) => handleNavClick(e, item.href)}
                     title={collapsed ? item.label : undefined}
                     className={`flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium transition-colors ${
                       collapsed ? "justify-center" : ""
@@ -351,7 +354,16 @@ export default function Sidebar({
           <div className="min-w-0 flex-1">
             <p className="truncate text-xs text-sdc-blue-100/90">{userEmail}</p>
             <form action={signOutAction}>
-              <button className="text-[11px] text-sdc-blue-100/60 underline hover:text-white">Sign out</button>
+              <button
+                onClick={(e) => {
+                  if (isEtcDirty() && !window.confirm("You have unsaved New ETC changes that haven't been saved. Sign out anyway?")) {
+                    e.preventDefault();
+                  }
+                }}
+                className="text-[11px] text-sdc-blue-100/60 underline hover:text-white"
+              >
+                Sign out
+              </button>
             </form>
           </div>
         )}

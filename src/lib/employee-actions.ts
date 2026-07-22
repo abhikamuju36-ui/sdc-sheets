@@ -13,8 +13,9 @@ function readEmployeeForm(formData: FormData) {
 
   const department = String(formData.get("department") ?? "").trim() || null;
   const billingGroup = String(formData.get("billingGroup") ?? "").trim() || null;
+  const discipline = String(formData.get("discipline") ?? "").trim() || null;
   const paylocityId = String(formData.get("paylocityId") ?? "").trim() || null;
-  return { name, department, billingGroup, paylocityId };
+  return { name, department, billingGroup, discipline, paylocityId };
 }
 
 export async function createEmployee(formData: FormData) {

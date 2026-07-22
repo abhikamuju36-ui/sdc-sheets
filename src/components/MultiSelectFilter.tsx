@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 
 // Generic multi-select dropdown filter, same interaction pattern as
 // PhaseColumnPicker (checkboxes, Select all/Clear, closes on outside click)
@@ -19,6 +19,7 @@ export function MultiSelectFilter({
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const pathname = usePathname();
   const detailsRef = useRef<HTMLDetailsElement>(null);
   const selectedSet = new Set(selected);
   const checkedCount = options.filter((o) => selectedSet.has(o)).length;
@@ -38,7 +39,7 @@ export function MultiSelectFilter({
   function navigate(next: Set<string>) {
     const qs = new URLSearchParams(searchParams.toString());
     qs.set(paramName, Array.from(next).join(","));
-    router.push(`/quoted?${qs.toString()}`, { scroll: false });
+    router.push(`${pathname}?${qs.toString()}`, { scroll: false });
   }
 
   function toggle(value: string) {

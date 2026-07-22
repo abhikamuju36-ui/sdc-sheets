@@ -100,7 +100,7 @@ export default async function AuditLogPage({
             {logs.map((log, i) => (
               <tr key={log.id} className={`${TABLE_ROW_HOVER} align-top ${i % 2 === 1 ? "bg-sdc-gray-50/60" : ""}`}>
                 <td className="px-2 py-2 text-center text-[10px] text-sdc-gray-400">{(page - 1) * PAGE_SIZE + i + 1}</td>
-                <td className="whitespace-nowrap px-4 py-2 text-center text-[10px] text-sdc-gray-500">
+                <td className="whitespace-nowrap px-4 py-2 text-center text-[10px] text-sdc-gray-500" title={`${log.createdAt.toISOString()} (UTC)`}>
                   {log.createdAt.toISOString().slice(0, 16).replace("T", " ")}
                 </td>
                 <td className="px-3 py-2 text-center text-[10px] text-sdc-gray-700">{log.userEmail ?? "—"}</td>

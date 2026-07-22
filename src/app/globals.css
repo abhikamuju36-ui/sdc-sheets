@@ -164,6 +164,35 @@ td > select:focus {
   box-shadow: none !important;
 }
 
+/* Quoted/Actual split cells (Projects tab): the quoted-hours <input> shares
+ * its td with a static "/ actual" suffix, so it can't claim the full-width
+ * fill the plain grid-input rule above assumes (width: 100% !important) —
+ * narrow it to its own text instead. Deliberately NOT display:flex on the
+ * <td> itself — that pulls a table cell out of table layout entirely and
+ * corrupts the whole row (verified live: every column after it in the row
+ * goes blank and text overlaps). Plain inline-block + vertical-align keeps
+ * it a normal table-cell while still laying the two parts out side by side. */
+/* Center the quoted/actual pair as a unit inside the cell (text-align: center
+ * on the td), and center the number WITHIN the quoted input too, so it reads
+ * consistently center-aligned like every other cell in the table. */
+td.quoted-actual-cell {
+  white-space: nowrap;
+  text-align: center;
+}
+td.quoted-actual-cell > input[type="number"] {
+  width: 2.5rem !important;
+  min-width: 0;
+  display: inline-block;
+  vertical-align: middle;
+  text-align: center;
+  padding: 0.25rem 0.125rem;
+}
+td.quoted-actual-cell > .actual-suffix {
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: 0.15rem;
+}
+
 /* Date grid cells (DateCell.tsx): when empty, hide the native "mm/dd/yyyy"
  * segment text so the column reads as clean icon-only cells instead of a
  * wall of placeholder digits — but restore it on focus so there's still

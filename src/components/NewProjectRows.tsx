@@ -70,7 +70,10 @@ export function NewProjectRows({
             </td>
           )}
           {show("customer") && (
-            <td className="whitespace-nowrap px-2 py-1.5 text-center text-[10px] text-sdc-gray-600">
+            <td
+              style={{ width: "var(--customer-col-width, 120px)", minWidth: "var(--customer-col-width, 120px)", maxWidth: "var(--customer-col-width, 120px)" }}
+              className="overflow-hidden whitespace-nowrap px-2 py-1.5 text-center text-[10px] text-sdc-gray-600"
+            >
               <input type="text" name={`newRow__${tempId}__customer`} placeholder="—" aria-label="New project Customer" className="text-center" />
             </td>
           )}
@@ -141,7 +144,7 @@ export function NewProjectRows({
               </td>
             )
           )}
-          <td className="sticky right-[90px] z-10 whitespace-nowrap border-l border-sdc-border bg-sdc-yellow-bg/60 px-2 py-1.5 text-center text-[10px] font-medium text-sdc-navy">
+          <td className="whitespace-nowrap border-l border-sdc-border bg-sdc-yellow-bg/60 px-2 py-1.5 text-center text-[10px] font-medium text-sdc-navy">
             <div className="flex items-center justify-center gap-0.5">
               <span className="text-sdc-gray-400">$</span>
               <input
@@ -155,7 +158,7 @@ export function NewProjectRows({
               />
             </div>
           </td>
-          <td className="sticky right-0 z-10 whitespace-nowrap bg-sdc-yellow-bg/60 px-2 py-1.5 text-center text-[10px] text-sdc-gray-600">
+          <td className="whitespace-nowrap border-l border-sdc-border bg-sdc-yellow-bg/60 px-2 py-1.5 text-center text-[10px] text-sdc-gray-600">
             <div className="flex items-center justify-center gap-0.5">
               <span className="text-sdc-gray-400">$</span>
               <input
