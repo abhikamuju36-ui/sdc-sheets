@@ -23,7 +23,11 @@ const COLS = ["Purchase", "Invoiced", "Manufacturer", "Supplier", "Category", "P
 export function PartsCostSection({ parts, estimatedToPurchase }: { parts: JobPartsCost | null; estimatedToPurchase: number | null }) {
   const [category, setCategory] = useState("");
   const [supplier, setSupplier] = useState("");
+  const [manufacturer, setManufacturer] = useState("");
   const [search, setSearch] = useState("");
+  const [dateBasis, setDateBasis] = useState<"invoiced" | "purchase">("invoiced");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const allLines = useMemo(() => parts?.lines ?? [], [parts]);
 
@@ -35,26 +39,37 @@ export function PartsCostSection({ parts, estimatedToPurchase }: { parts: JobPar
     () => [...new Set(allLines.map((l) => l.supplier).filter(Boolean) as string[])].sort(),
     [allLines],
   );
+  const manufacturers = useMemo(
+    () => [...new Set(allLines.map((l) => l.manufacturer).filter(Boolean) as string[])].sort(),
+    [allLines],
+  );
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return allLines.filter((l) => {
       if (category && l.category !== category) return false;
       if (supplier && l.supplier !== supplier) return false;
+      if (manufacturer && l.manufacturer !== manufacturer) return false;
+      const d = dateBasis === "invoiced" ? l.invoicedDate : l.purchaseDate;
+      if (dateFrom && (!d || d < dateFrom)) return false;
+      if (dateTo && (!d || d > dateTo)) return false;
       if (q) {
         const hay = `${l.supplier ?? ""} ${l.manufacturer ?? ""} ${l.category ?? ""} ${l.partNumber ?? ""} ${l.description ?? ""} ${l.poNumber ?? ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [allLines, category, supplier, search]);
+  }, [allLines, category, supplier, manufacturer, search, dateBasis, dateFrom, dateTo]);
 
   const purchased = filtered.reduce((s, l) => s + l.totalPrice, 0);
   const paid = filtered.reduce((s, l) => s + l.invoicedAmount, 0);
   const shown = filtered.slice(0, ROW_CAP);
 
   if (!parts) return null;
-  const filterActive = Boolean(category || supplier || search.trim());
+  const filterActive = Boolean(category || supplier || manufacturer || search.trim() || dateFrom || dateTo);
+  const clearAll = () => {
+    setCategory(""); setSupplier(""); setManufacturer(""); setSearch(""); setDateFrom(""); setDateTo("");
+  };
 
   return (
     <div className="mt-8 space-y-4">
@@ -78,16 +93,35 @@ export function PartsCostSection({ parts, estimatedToPurchase }: { parts: JobPar
           <option value="">All suppliers</option>
           {suppliers.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
+        <select value={manufacturer} onChange={(e) => setManufacturer(e.target.value)} className={`${INPUT} w-auto min-w-40`} aria-label="Filter by manufacturer">
+          <option value="">All manufacturers</option>
+          {manufacturers.map((m) => <option key={m} value={m}>{m}</option>)}
+        </select>
         <input
           type="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search part #, description, PO…"
-          className={`${INPUT} w-64`}
+          className={`${INPUT} w-56`}
           aria-label="Search parts"
         />
+        {/* Date basis — single toggle button (Invoiced <-> Purchase) + range */}
+        <button
+          type="button"
+          onClick={() => setDateBasis((b) => (b === "invoiced" ? "purchase" : "invoiced"))}
+          title="Toggle whether the date range filters on Invoiced Date or Purchase Date"
+          className="flex items-center gap-1.5 rounded-md border border-sdc-blue bg-sdc-blue-light px-3 py-2 text-sm font-medium text-sdc-blue-dark hover:bg-sdc-blue-light/70"
+        >
+          {dateBasis === "invoiced" ? "Invoiced Date" : "Purchase Date"}
+          <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="1.6">
+            <path d="M4 5.5 L2 7.5 L4 9.5 M2 7.5 H14 M12 10.5 L14 8.5 L12 6.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+        <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className={`${INPUT} w-auto`} aria-label={`${dateBasis} date from`} />
+        <span className="text-xs text-sdc-gray-400">to</span>
+        <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className={`${INPUT} w-auto`} aria-label={`${dateBasis} date to`} />
         {filterActive && (
-          <button type="button" onClick={() => { setCategory(""); setSupplier(""); setSearch(""); }} className="text-xs text-sdc-gray-400 hover:text-sdc-navy">
+          <button type="button" onClick={clearAll} className="text-xs text-sdc-gray-400 hover:text-sdc-navy">
             Clear
           </button>
         )}
