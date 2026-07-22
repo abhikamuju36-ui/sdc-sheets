@@ -13,32 +13,47 @@ import type { JobHoursDashboard as DashData, HoursType } from "@/lib/job-hours-d
 const BLUE = "#118dff"; // planned (Quoted/ETC) — PBI series color 1
 const NAVY = "#12239e"; // actual — PBI series color 2
 
+// The fixed section template the chart/matrix always show (even at zero hours),
+// matching the Power BI report: Complete Design & Build (excluding PM) +
+// Machine Testing, in canonical order.
+const TEMPLATE_PHASES = ["Complete Design & Build", "Machine Testing"];
+
 const fmt = (n: number) => Math.round(n).toLocaleString();
+
+// Consecutive runs of a key, with counts — for the tiered dept/phase headers.
+function groupRuns<T>(rows: T[], keyOf: (r: T) => string, labelOf: (r: T) => string) {
+  const out: { label: string; count: number }[] = [];
+  let lastKey: string | null = null;
+  for (const r of rows) {
+    const k = keyOf(r);
+    if (k === lastKey) out[out.length - 1].count++;
+    else { out.push({ label: labelOf(r), count: 1 }); lastKey = k; }
+  }
+  return out;
+}
 
 export function JobHoursDashboard({ data }: { data: DashData }) {
   const [hoursType, setHoursType] = useState<HoursType>("Quoted");
   const planned = (s: { quoted: number; etc: number }) => (hoursType === "Quoted" ? s.quoted : s.etc);
   const plannedLabel = hoursType === "Quoted" ? "Quoted" : "ETC";
 
-  // Phase filter (simplified "Function Hierarchy" slicer). Default: phases that
-  // actually carry data, which matches the report's populated columns.
-  const phasesWithData = useMemo(() => {
-    const set = new Set<string>();
-    for (const s of data.sections) if (s.quoted || s.etc || s.actual) set.add(s.phase);
-    return [...set];
-  }, [data.sections]);
-  const [activePhases, setActivePhases] = useState<Set<string>>(() => new Set(phasesWithData));
+  // Fixed template — always show these phases/sections, even at zero hours.
+  const [activePhases, setActivePhases] = useState<Set<string>>(() => new Set(TEMPLATE_PHASES));
 
+  const templateSections = useMemo(
+    () => data.sections.filter((s) => TEMPLATE_PHASES.includes(s.phase) && s.code !== "10-111"),
+    [data.sections],
+  );
   const visible = useMemo(
-    () => data.sections.filter((s) => activePhases.has(s.phase) && (s.quoted || s.etc || s.actual)),
-    [data.sections, activePhases],
+    () => templateSections.filter((s) => activePhases.has(s.phase)),
+    [templateSections, activePhases],
   );
 
   const totalPlanned = visible.reduce((sum, x) => sum + planned(x), 0);
   const totalActual = visible.reduce((sum, x) => sum + x.actual, 0);
   const totalDiff = totalPlanned - totalActual;
 
-  const sectionChart = visible.map((s) => ({ name: s.name, planned: planned(s), actual: s.actual }));
+  const hierRows = visible.map((s) => ({ code: s.code, name: s.name, group: s.group, phase: s.phase, planned: planned(s), actual: s.actual }));
   const bgChart = data.billingGroups
     .filter((g) => g.quoted || g.etc || g.actual)
     .map((g) => ({ name: g.group, planned: hoursType === "Quoted" ? g.quoted : g.etc, actual: g.actual }));
@@ -80,7 +95,7 @@ export function JobHoursDashboard({ data }: { data: DashData }) {
           ))}
         </div>
         <div className="flex flex-wrap gap-1.5">
-          {phasesWithData.map((p) => (
+          {TEMPLATE_PHASES.map((p) => (
             <button
               key={p}
               type="button"
@@ -141,19 +156,9 @@ export function JobHoursDashboard({ data }: { data: DashData }) {
 
       {/* Charts */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[2fr_1fr]">
-        <div className={card("p-4")}>
+        <div className={`${card("p-4")} overflow-x-auto`}>
           <p className="mb-3 font-heading text-base font-bold tracking-tight text-sdc-navy">Estimate to Complete vs Actual</p>
-          <ResponsiveContainer width="100%" height={440}>
-            <BarChart data={sectionChart} margin={{ top: 16, right: 8, left: 0, bottom: 40 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="name" angle={-30} textAnchor="end" interval={0} height={70} tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} />
-              <Tooltip />
-              <Legend />
-              <Bar dataKey="planned" name={plannedLabel} fill={BLUE} />
-              <Bar dataKey="actual" name="Actual" fill={NAVY} />
-            </BarChart>
-          </ResponsiveContainer>
+          <SectionHierarchyChart rows={hierRows} plannedLabel={plannedLabel} />
         </div>
         <div className={card("p-4")}>
           <p className="mb-3 font-heading text-base font-bold tracking-tight text-sdc-navy">{plannedLabel} and Actual by Billing Group</p>
@@ -181,6 +186,67 @@ function Kpi({ label, value }: { label: string; value: string }) {
     <div className={card("p-5")}>
       <p className="text-xs font-semibold text-sdc-gray-600">{label}</p>
       <p className="mt-3 font-heading text-[26px] font-bold tracking-tight text-sdc-navy">{value}</p>
+    </div>
+  );
+}
+
+type HierRow = { code: string; name: string; group: string; phase: string; planned: number; actual: number };
+
+// Custom grouped-column chart with the Power BI tiered category axis:
+// Section names → Department → Phase, with dashed dividers between groups. Shows
+// every template section, even at zero. Grid columns = sections so the tiers
+// line up by construction (no pixel math).
+function SectionHierarchyChart({ rows, plannedLabel }: { rows: HierRow[]; plannedLabel: string }) {
+  const BAR_H = 300;
+  const max = Math.max(1, ...rows.flatMap((r) => [r.planned, r.actual]));
+  const deptRuns = groupRuns(rows, (r) => `${r.phase}|${r.group}`, (r) => r.group);
+  const phaseRuns = groupRuns(rows, (r) => r.phase, (r) => r.phase);
+  const colStyle = { gridTemplateColumns: `repeat(${rows.length}, minmax(48px, 1fr))` } as const;
+
+  const Bar = ({ value, color }: { value: number; color: string }) => (
+    <div className="flex h-full flex-col items-center justify-end" title={fmt(value)}>
+      <span className="mb-0.5 text-[8px] leading-none text-sdc-gray-500">{value ? fmt(value) : ""}</span>
+      <div className="w-2.5 rounded-t-sm" style={{ height: `${(value / max) * 100}%`, background: color }} />
+    </div>
+  );
+
+  return (
+    <div className="min-w-[640px]">
+      <div className="mb-2 flex items-center gap-4 text-xs text-sdc-gray-600">
+        <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: BLUE }} /> {plannedLabel}</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: NAVY }} /> Actual</span>
+      </div>
+      {/* Bars */}
+      <div className="grid items-end gap-x-1" style={{ ...colStyle, height: BAR_H }}>
+        {rows.map((r) => (
+          <div key={r.code} className="flex h-full items-end justify-center gap-1">
+            <Bar value={r.planned} color={BLUE} />
+            <Bar value={r.actual} color={NAVY} />
+          </div>
+        ))}
+      </div>
+      {/* Tier 1 — section names */}
+      <div className="grid gap-x-1 border-t border-sdc-border pt-1" style={colStyle}>
+        {rows.map((r) => (
+          <div key={r.code} className="px-0.5 text-center text-[10px] leading-tight text-sdc-navy">{r.name}</div>
+        ))}
+      </div>
+      {/* Tier 2 — department, spanning its sections */}
+      <div className="mt-1 grid" style={colStyle}>
+        {deptRuns.map((g, i) => (
+          <div key={i} style={{ gridColumn: `span ${g.count}` }} className="border-l border-dashed border-sdc-border py-0.5 text-center text-[10px] font-medium text-sdc-gray-600 first:border-l-0">
+            {g.label}
+          </div>
+        ))}
+      </div>
+      {/* Tier 3 — phase, spanning its departments */}
+      <div className="mt-0.5 grid" style={colStyle}>
+        {phaseRuns.map((p, i) => (
+          <div key={i} style={{ gridColumn: `span ${p.count}` }} className="border-l border-t border-dashed border-sdc-border py-1 text-center text-[11px] font-semibold text-sdc-navy first:border-l-0">
+            {p.label}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
