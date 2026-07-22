@@ -225,11 +225,22 @@ function SectionHierarchyChart({ rows, plannedLabel }: { rows: HierRow[]; planne
           </div>
         ))}
       </div>
-      {/* Tier 1 — section names */}
+      {/* Tier 1 — section names + signed Actual−planned variance */}
       <div className="grid gap-x-1 border-t border-sdc-border pt-1" style={colStyle}>
-        {rows.map((r) => (
-          <div key={r.code} className="px-0.5 text-center text-[10px] leading-tight text-sdc-navy">{r.name}</div>
-        ))}
+        {rows.map((r) => {
+          const diff = r.actual - r.planned; // + = over planned, − = under
+          const show = r.planned !== 0 || r.actual !== 0;
+          return (
+            <div key={r.code} className="px-0.5 text-center leading-tight">
+              <div className="text-[10px] text-sdc-navy">{r.name}</div>
+              {show && (
+                <div className={`text-[9px] font-semibold ${diff > 0 ? "text-red-600" : diff < 0 ? "text-sdc-green-text" : "text-sdc-gray-400"}`}>
+                  {diff > 0 ? "+" : ""}{fmt(diff)}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
       {/* Tier 2 — department, spanning its sections */}
       <div className="mt-1 grid" style={colStyle}>
