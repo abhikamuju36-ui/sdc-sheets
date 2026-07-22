@@ -201,12 +201,12 @@ function SectionHierarchyChart({ rows, plannedLabel }: { rows: HierRow[]; planne
   const max = Math.max(1, ...rows.flatMap((r) => [r.planned, r.actual]));
   const deptRuns = groupRuns(rows, (r) => `${r.phase}|${r.group}`, (r) => r.group);
   const phaseRuns = groupRuns(rows, (r) => r.phase, (r) => r.phase);
-  const colStyle = { gridTemplateColumns: `repeat(${rows.length}, minmax(48px, 1fr))` } as const;
+  const colStyle = { gridTemplateColumns: `repeat(${rows.length}, minmax(60px, 1fr))` } as const;
 
   const Bar = ({ value, color }: { value: number; color: string }) => (
     <div className="flex h-full flex-col items-center justify-end" title={fmt(value)}>
       <span className="mb-0.5 text-[8px] leading-none text-sdc-gray-500">{value ? fmt(value) : ""}</span>
-      <div className="w-2.5 rounded-t-sm" style={{ height: `${(value / max) * 100}%`, background: color }} />
+      <div className="w-5 rounded-t-sm" style={{ height: `${(value / max) * 100}%`, background: color }} />
     </div>
   );
 
@@ -219,7 +219,7 @@ function SectionHierarchyChart({ rows, plannedLabel }: { rows: HierRow[]; planne
       {/* Bars */}
       <div className="grid items-end gap-x-1" style={{ ...colStyle, height: BAR_H }}>
         {rows.map((r) => (
-          <div key={r.code} className="flex h-full items-end justify-center gap-1">
+          <div key={r.code} className="flex h-full items-end justify-center gap-1.5">
             <Bar value={r.planned} color={BLUE} />
             <Bar value={r.actual} color={NAVY} />
           </div>
