@@ -34,6 +34,10 @@ export function JobHoursDashboard({ data }: { data: DashData }) {
     [data.sections, activePhases],
   );
 
+  const totalPlanned = visible.reduce((sum, x) => sum + planned(x), 0);
+  const totalActual = visible.reduce((sum, x) => sum + x.actual, 0);
+  const totalDiff = totalPlanned - totalActual;
+
   const sectionChart = visible.map((s) => ({ name: s.name, planned: planned(s), actual: s.actual }));
   const bgChart = data.billingGroups
     .filter((g) => g.quoted || g.etc || g.actual)
@@ -99,43 +103,37 @@ export function JobHoursDashboard({ data }: { data: DashData }) {
         </div>
       ) : (
       <>
-      {/* Per-section matrix: sections as columns, Quoted/Act/Diff each */}
-      <div className={`${card("p-0")} overflow-x-auto`}>
-        <table className="w-full border-collapse text-xs">
+      {/* Per-section matrix: sections as ROWS — never scrolls horizontally. */}
+      <div className={`${card("p-0")} overflow-hidden`}>
+        <table className="w-full text-sm tabular-nums">
           <thead>
-            <tr className="bg-sdc-navy text-white">
-              <th className="sticky left-0 z-10 bg-sdc-navy px-2 py-1.5 text-left">Section</th>
-              {visible.map((s) => (
-                <th key={s.code} colSpan={3} className="border-l border-white/20 px-2 py-1.5 text-center">
-                  {s.name}
-                </th>
-              ))}
-            </tr>
-            <tr className="bg-sdc-gray-100 text-sdc-gray-600">
-              <th className="sticky left-0 z-10 bg-sdc-gray-100 px-2 py-1 text-left">{data.job.jobId}</th>
-              {visible.map((s) => (
-                <>
-                  <th key={`${s.code}-q`} className="border-l border-sdc-border-soft px-2 py-1 text-right font-medium">{plannedLabel}</th>
-                  <th key={`${s.code}-a`} className="px-2 py-1 text-right font-medium">Act</th>
-                  <th key={`${s.code}-d`} className="px-2 py-1 text-right font-medium">Diff</th>
-                </>
-              ))}
+            <tr className="bg-sdc-navy text-left text-white">
+              <th className="px-3 py-2 font-medium">Section</th>
+              <th className="px-3 py-2 font-medium">Phase · Dept</th>
+              <th className="px-3 py-2 text-right font-medium">{plannedLabel}</th>
+              <th className="px-3 py-2 text-right font-medium">Actual</th>
+              <th className="px-3 py-2 text-right font-medium">Diff</th>
             </tr>
           </thead>
           <tbody>
-            <tr className="tabular-nums">
-              <td className="sticky left-0 z-10 bg-white px-2 py-1.5 font-medium text-sdc-navy">Hours</td>
-              {visible.map((s) => {
-                const p = planned(s);
-                const diff = p - s.actual;
-                return (
-                  <>
-                    <td key={`${s.code}-qv`} className="border-l border-sdc-border-soft px-2 py-1.5 text-right text-sdc-blue-dark">{fmt(p)}</td>
-                    <td key={`${s.code}-av`} className="bg-sdc-blue-light/50 px-2 py-1.5 text-right font-semibold">{fmt(s.actual)}</td>
-                    <td key={`${s.code}-dv`} className={`px-2 py-1.5 text-right ${diff < 0 ? "text-red-600" : "text-sdc-gray-500"}`}>{fmt(diff)}</td>
-                  </>
-                );
-              })}
+            {visible.map((s) => {
+              const p = planned(s);
+              const diff = p - s.actual;
+              return (
+                <tr key={s.code} className="border-b border-sdc-border-soft/60 odd:bg-white even:bg-sdc-gray-50/60 hover:bg-sdc-blue-light/40">
+                  <td className="px-3 py-1.5 font-medium text-sdc-navy">{s.name}</td>
+                  <td className="px-3 py-1.5 text-xs text-sdc-gray-500">{s.phase} · {s.group}</td>
+                  <td className="px-3 py-1.5 text-right text-sdc-blue-dark">{fmt(p)}</td>
+                  <td className="px-3 py-1.5 text-right font-semibold">{fmt(s.actual)}</td>
+                  <td className={`px-3 py-1.5 text-right ${diff < 0 ? "text-red-600" : "text-sdc-gray-500"}`}>{fmt(diff)}</td>
+                </tr>
+              );
+            })}
+            <tr className="border-t-2 border-sdc-border bg-sdc-gray-100 font-bold text-sdc-navy">
+              <td className="px-3 py-2" colSpan={2}>Total</td>
+              <td className="px-3 py-2 text-right">{fmt(totalPlanned)}</td>
+              <td className="px-3 py-2 text-right">{fmt(totalActual)}</td>
+              <td className={`px-3 py-2 text-right ${totalDiff < 0 ? "text-red-600" : ""}`}>{fmt(totalDiff)}</td>
             </tr>
           </tbody>
         </table>
