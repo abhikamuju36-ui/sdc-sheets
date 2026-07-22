@@ -150,6 +150,17 @@ const GROUPS: NavGroup[] = [
         ),
       },
       {
+        href: "/etc",
+        label: "Monthly ETC",
+        isActive: (p) => p === "/etc",
+        icon: (
+          <Icon>
+            <rect x="2" y="2" width="12" height="12" rx="1.5" />
+            <line x1="2" y1="6" x2="14" y2="6" />
+          </Icon>
+        ),
+      },
+      {
         href: "/job-hours",
         label: "Job Hour Details",
         isActive: (p) => p === "/job-hours",
@@ -159,17 +170,6 @@ const GROUPS: NavGroup[] = [
             <rect x="2.5" y="8" width="2.5" height="5" rx="0.5" />
             <rect x="6.75" y="4.5" width="2.5" height="8.5" rx="0.5" />
             <rect x="11" y="6.5" width="2.5" height="6.5" rx="0.5" />
-          </Icon>
-        ),
-      },
-      {
-        href: "/etc",
-        label: "Monthly ETC",
-        isActive: (p) => p === "/etc",
-        icon: (
-          <Icon>
-            <rect x="2" y="2" width="12" height="12" rx="1.5" />
-            <line x1="2" y1="6" x2="14" y2="6" />
           </Icon>
         ),
       },
