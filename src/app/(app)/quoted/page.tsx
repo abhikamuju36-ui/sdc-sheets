@@ -1,4 +1,5 @@
 import { Fragment } from "react";
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { validJobTypeFilter, VALID_JOB_TYPES, compareJobIds, isSdcCustomer } from "@/lib/job-filters";
 import { SECTIONS, PHASE_GROUPS } from "@/lib/sections";
@@ -456,10 +457,12 @@ export default async function QuotedPage({
                     {i + 1}
                   </td>
                   <td
-                    title={job.jobId}
-                    className={`sticky left-8 z-10 w-20 min-w-20 max-w-20 overflow-hidden truncate px-2 py-1.5 text-center font-mono text-[10px] text-sdc-gray-500 ${zebraSticky}`}
+                    title={`Open ${job.jobId} in Job Hour Details`}
+                    className={`sticky left-8 z-10 w-20 min-w-20 max-w-20 overflow-hidden truncate px-2 py-1.5 text-center font-mono text-[10px] ${zebraSticky}`}
                   >
-                    {job.jobId}
+                    <Link href={`/job-hours?jobs=${encodeURIComponent(job.jobId)}`} className="font-semibold text-sdc-blue-dark hover:underline">
+                      {job.jobId}
+                    </Link>
                   </td>
                   {show("job") && (
                     <td
