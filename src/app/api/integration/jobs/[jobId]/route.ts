@@ -36,6 +36,19 @@ export async function GET(
   const job = await prisma.job.findUnique({ where: { jobId } });
   if (!job) return Response.json({ error: "job_not_found" }, { status: 404 });
 
+  // Per-category QUOTED hours for the scheduler's Project Release budget grid.
+  // Keyed by section code (e.g. "10-211" ME General). Same job.id gotcha as
+  // below: EstimatedHours.jobId is the internal Job.id PK, not the "1079" string.
+  const estRows = await prisma.estimatedHours.findMany({
+    where: { jobId: job.id },
+    select: { section: true, quotedHours: true },
+  });
+  const quotedHoursBySection: Record<string, number> = {};
+  for (const r of estRows) {
+    const n = Number(r.quotedHours);
+    if (Number.isFinite(n)) quotedHoursBySection[r.section] = n;
+  }
+
   // Execution ETC for the current (latest) ETC month, matching the grid.
   // NOTE: EtcEntry.jobId is the internal Job.id (autoincrement PK), NOT the
   // "1079"-style Job.jobId string — so the rollup is keyed on job.id here.
@@ -71,6 +84,7 @@ export async function GET(
     },
     costQuoted: toNum(job.costQuoted),
     costActualHistorical: toNum(job.costActualHistorical),
+    quotedHoursBySection,
     executionEtc,
     executionMonth,
     totEtoSyncedAt: job.totEtoSyncedAt ? job.totEtoSyncedAt.toISOString() : null,
