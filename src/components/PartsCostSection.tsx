@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { card } from "@/components/ui/classnames";
+import { IndicatorCard } from "@/components/charts/IndicatorCard";
 import type { JobPartsCost } from "@/lib/sync-totaleto";
 
 // Parts Cost section of the Job Hour Details dashboard — live per-part detail +
@@ -79,12 +80,25 @@ export function PartsCostSection({ parts, estimatedToPurchase }: { parts: JobPar
     <div className="mt-8 space-y-4">
       <p className="font-heading text-lg font-bold tracking-tight text-sdc-navy">Parts Cost</p>
 
-      {/* KPI card — responds to the filters below */}
+      {/* KPI indicators — number + delta + bullet-vs-target (Plotly-style). */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        <Kpi label={filterActive ? "Purchased (filtered)" : "Purchased"} value={usd(purchased)} />
-        <Kpi label="Estimated to Purchase" value={estimatedToPurchase != null ? usd(estimatedToPurchase) : "—"} />
-        <Kpi label={filterActive ? "Paid (filtered)" : "Paid"} value={usd(paid)} tone="green" />
-        <Kpi label="Left to Pay" value={usd(purchased - paid)} />
+        <IndicatorCard
+          label={filterActive ? "Purchased (filtered)" : "Purchased"}
+          value={usd(purchased)}
+          numericValue={purchased}
+          delta={estimatedToPurchase != null ? { reference: estimatedToPurchase, goodWhenLower: true, format: usd } : undefined}
+          bullet={estimatedToPurchase != null && estimatedToPurchase > 0 ? { value: purchased, target: estimatedToPurchase } : undefined}
+          hint={estimatedToPurchase != null ? "vs estimated to purchase" : undefined}
+        />
+        <IndicatorCard label="Estimated to Purchase" value={estimatedToPurchase != null ? usd(estimatedToPurchase) : "—"} />
+        <IndicatorCard
+          label={filterActive ? "Paid (filtered)" : "Paid"}
+          value={usd(paid)}
+          tone="green"
+          bullet={purchased > 0 ? { value: paid, target: purchased, color: "#15803d" } : undefined}
+          hint={purchased > 0 ? "invoiced of purchased" : undefined}
+        />
+        <IndicatorCard label="Left to Pay" value={usd(purchased - paid)} numericValue={purchased - paid} />
       </div>
 
       {/* Slicers — single compact row (no wrap); dropdowns/search shrink to fit. */}
@@ -195,17 +209,6 @@ export function PartsCostSection({ parts, estimatedToPurchase }: { parts: JobPar
       {filtered.length > ROW_CAP && (
         <p className="text-xs text-sdc-gray-400">Showing the {ROW_CAP} most recent of {filtered.length.toLocaleString()} matching line items — narrow with the filters above.</p>
       )}
-    </div>
-  );
-}
-
-function Kpi({ label, value, tone }: { label: string; value: string; tone?: "green" }) {
-  return (
-    <div className={card("p-5")}>
-      <p className="text-xs font-semibold text-sdc-gray-600">{label}</p>
-      <p className={`mt-3 font-heading text-[22px] font-bold tracking-tight ${tone === "green" ? "text-sdc-green-text" : "text-sdc-navy"}`}>
-        {value}
-      </p>
     </div>
   );
 }

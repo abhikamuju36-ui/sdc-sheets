@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { card } from "@/components/ui/classnames";
 import { EChart } from "@/components/charts/EChart";
 import { groupedBarOption, SERIES } from "@/components/charts/theme";
+import { IndicatorCard } from "@/components/charts/IndicatorCard";
 import type { JobHoursDashboard as DashData, HoursType } from "@/lib/job-hours-dashboard";
 
 // Web recreation of the Power BI "Job Detail" dashboard (hours half). The Hours
@@ -64,12 +65,12 @@ export function JobHoursDashboard({ data }: { data: DashData }) {
 
   return (
     <div className="space-y-5">
-      {/* KPI tiles */}
+      {/* KPI indicators */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Kpi label="Active Jobs" value={String(data.kpis.activeJobs)} />
-        <Kpi label="Hours Refreshed Thru" value={data.kpis.hoursRefreshedThru ?? "—"} />
-        <Kpi label="Latest ETC Month" value={data.kpis.latestEtcMonth ?? "—"} />
-        <Kpi
+        <IndicatorCard label="Active Jobs" value={String(data.kpis.activeJobs)} />
+        <IndicatorCard label="Hours Refreshed Thru" value={data.kpis.hoursRefreshedThru ?? "—"} />
+        <IndicatorCard label="Latest ETC Month" value={data.kpis.latestEtcMonth ?? "—"} />
+        <IndicatorCard
           label="Eng Design-to-Debug Ratio"
           value={data.kpis.designToDebugRatio != null ? data.kpis.designToDebugRatio.toFixed(2) : "—"}
         />
@@ -141,14 +142,6 @@ export function JobHoursDashboard({ data }: { data: DashData }) {
   );
 }
 
-function Kpi({ label, value }: { label: string; value: string }) {
-  return (
-    <div className={card("p-5")}>
-      <p className="text-xs font-semibold text-sdc-gray-600">{label}</p>
-      <p className="mt-3 font-heading text-[26px] font-bold tracking-tight text-sdc-navy">{value}</p>
-    </div>
-  );
-}
 
 type HierRow = { code: string; name: string; group: string; phase: string; planned: number; actual: number };
 
