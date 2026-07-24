@@ -67,6 +67,92 @@ export type TeamSyncResult = {
   unmatchedScheduler: string[];
 };
 
+// Read-only reconciliation of ETC's FULL roster (active + inactive) against the
+// Scheduler's team list, on two dimensions: active status and team (grouping).
+// Matches on the same nickname-normalized name key as the grouping sync;
+// nothing is written. Includes inactive Scheduler members so status can differ.
+export type RosterReconciliation = {
+  ok: boolean;
+  reason?: string;
+  schedulerCount: number; // real Scheduler members (active + inactive)
+  etcActiveCount: number;
+  etcTotalCount: number;
+  matched: number; // people found in both apps (by name)
+  agree: number; // matched AND active-status + team both agree
+  statusMismatches: { name: string; etcActive: boolean; schedulerActive: boolean }[];
+  teamMismatches: { name: string; etcTeam: string; schedulerTeam: string }[];
+  schedulerOnly: string[]; // Scheduler people not in ETC at all
+  etcActiveOnly: string[]; // active ETC people not on the Scheduler roster
+};
+
+export async function reconcileSchedulerRoster(): Promise<RosterReconciliation> {
+  let team;
+  try {
+    team = await fetchSchedulerTeam(true); // include inactive for status compare
+  } catch (e) {
+    return {
+      ok: false,
+      reason: e instanceof Error ? e.message : "Could not reach the Scheduler database.",
+      schedulerCount: 0, etcActiveCount: 0, etcTotalCount: 0, matched: 0, agree: 0,
+      statusMismatches: [], teamMismatches: [], schedulerOnly: [], etcActiveOnly: [],
+    };
+  }
+
+  const employees = await prisma.employee.findMany({
+    select: { name: true, active: true, discipline: true },
+  });
+  // ETC keyed by normalized name (first wins on the rare collision).
+  const etcByKey = new Map<string, (typeof employees)[number]>();
+  for (const e of employees) {
+    const k = normalizeName(e.name);
+    if (!etcByKey.has(k)) etcByKey.set(k, e);
+  }
+  const schedulerKeys = new Set(team.map((m) => normalizeName(m.name)));
+
+  let matched = 0;
+  let agree = 0;
+  const statusMismatches: RosterReconciliation["statusMismatches"] = [];
+  const teamMismatches: RosterReconciliation["teamMismatches"] = [];
+  const schedulerOnly: string[] = [];
+
+  for (const m of team) {
+    const emp = etcByKey.get(normalizeName(m.name));
+    if (!emp) {
+      schedulerOnly.push(m.name);
+      continue;
+    }
+    matched++;
+    const statusOk = emp.active === m.active;
+    const schedTeam = toEtcDiscipline(m.discipline);
+    const teamOk = (emp.discipline ?? "") === schedTeam;
+    if (!statusOk) {
+      statusMismatches.push({ name: emp.name, etcActive: emp.active, schedulerActive: m.active });
+    }
+    if (!teamOk) {
+      teamMismatches.push({ name: emp.name, etcTeam: emp.discipline ?? "—", schedulerTeam: schedTeam });
+    }
+    if (statusOk && teamOk) agree++;
+  }
+
+  const etcActiveOnly = employees
+    .filter((e) => e.active && !schedulerKeys.has(normalizeName(e.name)))
+    .map((e) => e.name)
+    .sort();
+
+  return {
+    ok: true,
+    schedulerCount: team.length,
+    etcActiveCount: employees.filter((e) => e.active).length,
+    etcTotalCount: employees.length,
+    matched,
+    agree,
+    statusMismatches,
+    teamMismatches,
+    schedulerOnly,
+    etcActiveOnly,
+  };
+}
+
 export async function syncSchedulerTeam(): Promise<TeamSyncResult> {
   let team;
   try {

@@ -51,15 +51,16 @@ export type SchedulerTeamMember = {
   specialty: string | null;
 };
 
-// Every active, real team member (placeholders like "ME Placeholder" are the
-// Scheduler's own assignment stand-ins, not people, so they're excluded).
-export async function fetchSchedulerTeam(): Promise<SchedulerTeamMember[]> {
+// Real team members (placeholders like "ME Placeholder" are the Scheduler's own
+// assignment stand-ins, not people, so they're always excluded). By default
+// only active members; pass includeInactive for status reconciliation.
+export async function fetchSchedulerTeam(includeInactive = false): Promise<SchedulerTeamMember[]> {
   const pool = getPool();
   const [rows] = await pool.query<mysql.RowDataPacket[]>(
     `SELECT name, discipline, active, is_lead, sort_order, specialty
        FROM team_members
-      WHERE active = 1
-        AND name NOT LIKE '%Placeholder%'
+      WHERE name NOT LIKE '%Placeholder%'
+        ${includeInactive ? "" : "AND active = 1"}
       ORDER BY discipline, sort_order, name`,
   );
   return rows.map((r) => ({

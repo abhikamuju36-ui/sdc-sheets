@@ -6,6 +6,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BUTTON_SECONDARY, INPUT, TABLE_HEADER_ROW, TABLE_GRID } from "@/components/ui/classnames";
 import { SyncSchedulerTeamButton } from "@/components/SyncSchedulerTeamButton";
 import { ImportSupervisorsButton } from "@/components/ImportSupervisorsButton";
+import { ReconcileRosterButton } from "@/components/ReconcileRosterButton";
 
 // Team groupings, matching the SDC Scheduler app's team_members.discipline
 // categories exactly (pm/mech/controls/build/wire) so the two apps read the
@@ -99,6 +100,7 @@ export default async function EmployeesPage({
           {showInactive ? "Hide inactive" : "Show inactive"}
         </a>
         <div className="ml-auto flex items-center gap-2">
+          <ReconcileRosterButton />
           <ImportSupervisorsButton />
           <SyncSchedulerTeamButton />
         </div>

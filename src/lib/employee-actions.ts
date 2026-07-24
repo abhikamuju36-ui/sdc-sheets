@@ -3,7 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { logAudit } from "@/lib/audit";
-import { syncSchedulerTeam, type TeamSyncResult } from "@/lib/sync-scheduler-team";
+import { syncSchedulerTeam, reconcileSchedulerRoster, type TeamSyncResult, type RosterReconciliation } from "@/lib/sync-scheduler-team";
 import { parseSupervisorExport, applySupervisorImport, type SupervisorImportResult } from "@/lib/import-employee-supervisors";
 
 // Employees are NEVER hard-deleted — departed people keep their historical
@@ -66,6 +66,12 @@ export async function updateEmployee(id: number, formData: FormData) {
     metadata: { before, after: data },
   });
   revalidatePath("/employees");
+}
+
+// Read-only: reports how ETC's full roster (active + inactive) reconciles with
+// the Scheduler's team list. No writes.
+export async function reconcileSchedulerRosterAction(): Promise<RosterReconciliation> {
+  return reconcileSchedulerRoster();
 }
 
 // Pulls the team grouping from the SDC Scheduler (its team_members table is the
