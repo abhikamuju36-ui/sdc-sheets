@@ -1,10 +1,31 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useReactTable, getCoreRowModel, getSortedRowModel, type SortingState, type ColumnDef } from "@tanstack/react-table";
 import { card } from "@/components/ui/classnames";
 import { IndicatorCard } from "@/components/charts/IndicatorCard";
 import { GaugeCard } from "@/components/charts/GaugeCard";
 import type { JobPartsCost } from "@/lib/sync-totaleto";
+
+type PartLine = JobPartsCost["lines"][number];
+
+// Sortable columns (TanStack Table). Order matches COLS; ids drive sorting only
+// — the cells are still rendered by hand below to keep the exact styling.
+const TABLE_COLUMNS: ColumnDef<PartLine>[] = [
+  { id: "purchaseDate", accessorFn: (l) => l.purchaseDate ?? "" },
+  { id: "invoicedDate", accessorFn: (l) => l.invoicedDate ?? "" },
+  { id: "manufacturer", accessorFn: (l) => l.manufacturer ?? "" },
+  { id: "supplier", accessorFn: (l) => l.supplier ?? "" },
+  { id: "category", accessorFn: (l) => l.category ?? "" },
+  { id: "poNumber", accessorFn: (l) => l.poNumber ?? "" },
+  { id: "partNumber", accessorFn: (l) => l.partNumber ?? "" },
+  { id: "description", accessorFn: (l) => l.description ?? "" },
+  { id: "quantity", accessorFn: (l) => l.quantity },
+  { id: "unitPrice", accessorFn: (l) => l.unitPrice },
+  { id: "totalPrice", accessorFn: (l) => l.totalPrice },
+  { id: "invoicedAmount", accessorFn: (l) => l.invoicedAmount },
+  { id: "pct", accessorFn: (l) => (l.totalPrice ? l.invoicedAmount / l.totalPrice : 0) },
+];
 
 // Parts Cost section of the Job Hour Details dashboard — live per-part detail +
 // rollups from TotalETO (see getJobPartsCost). Mirrors the Power BI "Parts Cost"
@@ -69,7 +90,19 @@ export function PartsCostSection({ parts, estimatedToPurchase }: { parts: JobPar
 
   const purchased = filtered.reduce((s, l) => s + l.totalPrice, 0);
   const paid = filtered.reduce((s, l) => s + l.invoicedAmount, 0);
-  const shown = filtered.slice(0, ROW_CAP);
+
+  // Client-side sortable columns (click a header). Filtering stays as-is; this
+  // just orders the already-filtered rows.
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const table = useReactTable({
+    data: filtered,
+    columns: TABLE_COLUMNS,
+    state: { sorting },
+    onSortingChange: setSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+  });
+  const shownRows = table.getRowModel().rows.slice(0, ROW_CAP);
 
   if (!parts) return null;
   const filterActive = Boolean(category || supplier || manufacturer || search.trim() || dateFrom || dateTo);
@@ -170,23 +203,31 @@ export function PartsCostSection({ parts, estimatedToPurchase }: { parts: JobPar
           <table className="w-full border-collapse text-[11px]">
             <thead className="sticky top-0 z-20">
               <tr className="bg-sdc-navy text-left text-white">
-                {COLS.map((h, i) => (
-                  <th
-                    key={h}
-                    className={`whitespace-nowrap border-l border-white/15 px-2 py-2 font-medium first:border-l-0 ${
-                      i === 0 ? "sticky left-0 z-30 bg-sdc-navy" : ""
-                    } ${i >= 8 ? "text-right" : ""}`}
-                  >
-                    {h}
-                  </th>
-                ))}
+                {table.getFlatHeaders().map((header, i) => {
+                  const sorted = header.column.getIsSorted(); // "asc" | "desc" | false
+                  return (
+                    <th
+                      key={header.id}
+                      onClick={header.column.getToggleSortingHandler()}
+                      className={`cursor-pointer select-none whitespace-nowrap border-l border-white/15 px-2 py-2 font-medium hover:bg-white/10 first:border-l-0 ${
+                        i === 0 ? "sticky left-0 z-30 bg-sdc-navy" : ""
+                      } ${i >= 8 ? "text-right" : ""}`}
+                    >
+                      <span className={`inline-flex items-center gap-1 ${i >= 8 ? "justify-end" : ""}`}>
+                        {COLS[i]}
+                        <span className="text-[9px] opacity-80">{sorted === "asc" ? "▲" : sorted === "desc" ? "▼" : ""}</span>
+                      </span>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody className="tabular-nums">
-              {shown.map((l, i) => {
+              {shownRows.map((row) => {
+                const l = row.original;
                 const pct = l.totalPrice ? Math.round((l.invoicedAmount / l.totalPrice) * 100) : 0;
                 return (
-                  <tr key={i} className="border-b border-sdc-border-soft/60 odd:bg-white even:bg-sdc-gray-50/60 hover:bg-sdc-blue-light/40">
+                  <tr key={row.id} className="border-b border-sdc-border-soft/60 odd:bg-white even:bg-sdc-gray-50/60 hover:bg-sdc-blue-light/40">
                     <td className="sticky left-0 z-10 whitespace-nowrap bg-inherit px-2 py-1 text-sdc-gray-500">{l.purchaseDate ?? "—"}</td>
                     <td className="whitespace-nowrap px-2 py-1 text-sdc-gray-500">{l.invoicedDate ?? "—"}</td>
                     <td className="max-w-36 truncate px-2 py-1" title={l.manufacturer ?? ""}>{l.manufacturer ?? "—"}</td>
