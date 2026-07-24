@@ -130,6 +130,7 @@ export function JobHoursDashboard({ data }: { data: DashData }) {
               planned: bgChart.map((g) => g.planned),
               actual: bgChart.map((g) => g.actual),
               plannedLabel,
+              diffs: bgChart.map((g) => g.planned - g.actual),
             })}
           />
         </div>

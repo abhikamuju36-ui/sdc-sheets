@@ -25,6 +25,10 @@ export function compact(n: number): string {
 // categories, with a recessive axis/grid, rounded thin bars, a rich shared
 // tooltip, and selective direct labels. `rows` supply the category + values;
 // `sub` is optional secondary text (e.g. "Phase · Dept") shown in the tooltip.
+const DIFF_GREEN = "#15803d"; // under (Quoted − Actual > 0)
+const DIFF_RED = "#dc2626"; // over
+const DIFF_GRAY = "#94a3b8"; // even
+
 export function groupedBarOption(opts: {
   categories: string[];
   planned: number[];
@@ -33,8 +37,42 @@ export function groupedBarOption(opts: {
   sub?: string[];
   valueFormatter?: (n: number) => string;
   rotate?: number;
+  // Per-category Quoted − Actual variance. When present, shown on top of each
+  // group: green if positive (under Quoted), red if negative (over).
+  diffs?: number[];
 }): EChartsOption {
   const fmt = opts.valueFormatter ?? compact;
+  const barLabel = { show: true, position: "top" as const, color: MUTED, fontSize: 10, formatter: (p: unknown) => { const v = Number((p as { value?: number }).value) || 0; return v ? fmt(v) : ""; } };
+  const series: NonNullable<EChartsOption["series"]> = [
+    { name: opts.plannedLabel, type: "bar", data: opts.planned, barMaxWidth: 26, itemStyle: { borderRadius: [4, 4, 0, 0] }, label: barLabel },
+    { name: "Actual", type: "bar", data: opts.actual, barMaxWidth: 26, itemStyle: { borderRadius: [4, 4, 0, 0] }, label: barLabel },
+  ];
+
+  // Quoted − Actual variance on top of each group: a zero-size scatter point at
+  // the taller bar's height, carrying a green (under) / red (over) label.
+  if (opts.diffs) {
+    const diffs = opts.diffs;
+    series.push({
+      type: "scatter",
+      symbolSize: 0,
+      silent: true,
+      z: 5,
+      tooltip: { show: false },
+      data: opts.categories.map((c, i) => ({
+        value: [c, Math.max(opts.planned[i] ?? 0, opts.actual[i] ?? 0)] as [string, number],
+        label: { color: diffs[i] > 0 ? DIFF_GREEN : diffs[i] < 0 ? DIFF_RED : DIFF_GRAY },
+      })),
+      label: {
+        show: true,
+        position: "top",
+        distance: 16,
+        fontWeight: "bold",
+        fontSize: 12,
+        formatter: (p: unknown) => { const d = diffs[(p as { dataIndex: number }).dataIndex] || 0; return d ? `${d > 0 ? "+" : ""}${fmt(d)}` : ""; },
+      },
+    });
+  }
+
   return {
     color: [SERIES.planned, SERIES.actual],
     textStyle: { fontFamily: FONT },
@@ -58,7 +96,7 @@ export function groupedBarOption(opts: {
       textStyle: { color: "#0f172a", fontSize: 12 },
       extraCssText: "box-shadow:0 8px 24px rgba(6,29,57,0.12); border-radius:10px;",
       formatter: (params: unknown) => {
-        const arr = params as { dataIndex: number; seriesName: string; value: number; marker: string }[];
+        const arr = (params as { dataIndex: number; seriesName: string; value: number; marker: string }[]).filter((p) => p.seriesName === opts.plannedLabel || p.seriesName === "Actual");
         const i = arr[0]?.dataIndex ?? 0;
         const head = `<div style="font-weight:600;color:${INK};margin-bottom:2px">${opts.categories[i]}</div>`;
         const subLine = opts.sub?.[i] ? `<div style="color:${MUTED};font-size:11px;margin-bottom:6px">${opts.sub[i]}</div>` : "";
@@ -73,36 +111,13 @@ export function groupedBarOption(opts: {
       data: opts.categories,
       axisLine: { lineStyle: { color: GRID } },
       axisTick: { show: false },
-      axisLabel: {
-        color: MUTED,
-        fontSize: 11,
-        rotate: opts.rotate ?? 0,
-        interval: 0,
-        hideOverlap: true,
-      },
+      axisLabel: { color: MUTED, fontSize: 11, rotate: opts.rotate ?? 0, interval: 0, hideOverlap: true },
     },
     yAxis: {
       type: "value",
       splitLine: { lineStyle: { color: GRID } },
       axisLabel: { color: MUTED, fontSize: 11, formatter: (v: number) => fmt(v) },
     },
-    series: [
-      {
-        name: opts.plannedLabel,
-        type: "bar",
-        data: opts.planned,
-        barMaxWidth: 26,
-        itemStyle: { borderRadius: [4, 4, 0, 0] },
-        label: { show: true, position: "top", color: MUTED, fontSize: 10, formatter: (p: unknown) => { const v = Number((p as { value?: number }).value) || 0; return v ? fmt(v) : ""; } },
-      },
-      {
-        name: "Actual",
-        type: "bar",
-        data: opts.actual,
-        barMaxWidth: 26,
-        itemStyle: { borderRadius: [4, 4, 0, 0] },
-        label: { show: true, position: "top", color: MUTED, fontSize: 10, formatter: (p: unknown) => { const v = Number((p as { value?: number }).value) || 0; return v ? fmt(v) : ""; } },
-      },
-    ],
+    series,
   };
 }
