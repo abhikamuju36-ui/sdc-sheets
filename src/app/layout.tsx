@@ -13,8 +13,8 @@ const montserrat = Montserrat({
 });
 
 export const metadata: Metadata = {
-  title: "SDC ETC Planner",
-  description: "Estimate-to-complete tracking for SDC projects",
+  title: "SDC Projects Reports",
+  description: "Project reporting and estimate-to-complete tracking for SDC projects",
 };
 
 export default function RootLayout({

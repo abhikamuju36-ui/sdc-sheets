@@ -1,5 +1,5 @@
 /**
- * PM2 Ecosystem Config — SDC ETC Planner (standalone)
+ * PM2 Ecosystem Config — SDC Projects Reports (standalone)
  *
  * Next.js 16 app (Prisma/MySQL) on port 3010. Runs as its own PM2 app under the
  * same interactive-user PM2 daemon as the rest of the SDC Tools estate, so it

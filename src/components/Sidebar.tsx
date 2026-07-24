@@ -302,7 +302,7 @@ export default function Sidebar({
         </div>
         {!collapsed && (
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold leading-tight text-white">ETC Planner</p>
+            <p className="truncate text-sm font-semibold leading-tight text-white">SDC Projects Reports</p>
             <p className="truncate text-[11px] text-sdc-blue-100/80">Steven Douglas Corp.</p>
           </div>
         )}

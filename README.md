@@ -1,4 +1,4 @@
-# SDC ETC Planner
+# SDC Projects Reports
 
 Replaces the `Project Planner Data Control.xlsx`, `End Of Month ETC Sheet.xlsx`,
 and `Standard Fees.xlsx` workbooks with a single web app: monthly

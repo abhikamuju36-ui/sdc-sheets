@@ -59,7 +59,7 @@ export default function LoginForm() {
             {mode === "signin" ? "Sign in" : "Create your account"}
           </h1>
           <p className="text-xs text-sdc-gray-400">
-            {mode === "signin" ? "Use your Steven Douglas Corp. account" : "Set up a new SDC ETC Planner account"}
+            {mode === "signin" ? "Use your Steven Douglas Corp. account" : "Set up a new SDC Projects Reports account"}
           </p>
         </div>
 
