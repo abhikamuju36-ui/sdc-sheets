@@ -102,13 +102,18 @@ export function PartsCostSection({ parts, estimatedToPurchase }: { parts: JobPar
         <IndicatorCard label="Left to Pay" value={usd(purchased - paid)} numericValue={purchased - paid} />
       </div>
 
-      {/* Parts budget gauge — Purchased against the Estimated-to-Purchase
-          budget (from Total ETO), Power BI-gauge style. */}
-      {estimatedToPurchase != null && estimatedToPurchase > 0 && (
+      {/* Parts gauge (Power BI-style). Prefer Purchased vs the Estimated-to-
+          Purchase budget; when there's no estimate, fall back to Paid vs
+          Purchased (invoiced %) so a gauge always shows when there's spend. */}
+      {estimatedToPurchase != null && estimatedToPurchase > 0 ? (
         <div className="grid grid-cols-1 gap-4 md:max-w-sm">
           <GaugeCard title="Parts Budget" value={purchased} target={estimatedToPurchase} subLabel="estimated to purchase" />
         </div>
-      )}
+      ) : purchased > 0 ? (
+        <div className="grid grid-cols-1 gap-4 md:max-w-sm">
+          <GaugeCard title="Parts Invoiced" value={paid} target={purchased} subLabel="of purchased" />
+        </div>
+      ) : null}
 
       {/* Slicers — single compact row (no wrap); dropdowns/search shrink to fit. */}
       <div className="flex flex-nowrap items-center gap-1.5">
