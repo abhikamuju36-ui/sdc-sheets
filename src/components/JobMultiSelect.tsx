@@ -76,6 +76,29 @@ export function JobMultiSelect({ jobs, selected }: { jobs: JobOpt[]; selected: s
             <button type="button" onClick={() => navigate(new Set())} className="hover:text-sdc-navy">Clear all</button>
           )}
         </div>
+        {selected.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-1 border-b border-sdc-border-soft pb-2">
+            {selected.map((jobId) => {
+              const j = jobs.find((x) => x.jobId === jobId);
+              const label = j ? `${j.jobId} — ${j.jobName}` : jobId;
+              return (
+                <span key={jobId} className="inline-flex max-w-full items-center gap-1 rounded-full bg-sdc-blue-light px-2 py-0.5 text-[11px] font-medium text-sdc-blue-dark">
+                  <span className="truncate">{label}</span>
+                  <button
+                    type="button"
+                    onClick={() => toggle(jobId)}
+                    aria-label={`Remove ${label}`}
+                    className="shrink-0 rounded-full leading-none text-sdc-blue-dark/70 hover:bg-sdc-blue/20 hover:text-sdc-blue-dark"
+                  >
+                    <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M4 4l8 8M12 4l-8 8" strokeLinecap="round" />
+                    </svg>
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        )}
         <div className="max-h-80 overflow-y-auto">
           {filtered.length === 0 ? (
             <p className="px-2 py-3 text-center text-xs text-sdc-gray-400">No jobs match.</p>

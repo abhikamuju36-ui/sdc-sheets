@@ -84,8 +84,12 @@ export function EtcSectionCells({
 
   const hoursLeft = calcHoursLeft(priorEtc, worked);
   const suggested = suggestNewEtc(priorEtc, worked);
+  // A cell only needs manager attention (yellow) when this section actually
+  // logged hours this month (worked > 0) and no value has been decided yet.
+  // With no hours worked, New ETC just carries the prior forward — no decision
+  // needed — so it stays neutral even while the month is still in progress.
   const decided =
-    (monthComplete !== false && worked === 0) || initialDraft != null || initialConfirmed != null || newEtcTouched;
+    worked === 0 || initialDraft != null || initialConfirmed != null || newEtcTouched;
   const newEtcNum = Number(newEtcText);
   const effective = newEtcText.trim() === "" || !Number.isFinite(newEtcNum) ? suggested : newEtcNum;
   const diff = hoursLeft - effective;

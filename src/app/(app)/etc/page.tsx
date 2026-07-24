@@ -6,7 +6,7 @@ import { EtcViewMenu } from "@/components/EtcViewMenu";
 import { EtcSyncMenu } from "@/components/EtcSyncMenu";
 import { SyncHistoryButton } from "@/components/SyncHistoryButton";
 import { getEtcMonthJobWhere } from "@/lib/etc-month-jobs";
-import { EtcDraftInput } from "@/components/EtcDraftInput";
+import { PartsCostNewEtcCell } from "@/components/PartsCostNewEtcCell";
 import { EtcSectionCells } from "@/components/EtcSectionCells";
 import { StandardRatesProvider, EtcStandardCells, StandardGrandCells } from "@/components/EtcStandardColumns";
 import type { StandardJobBase, StandardRates, FrozenStandardRow, PoolRowInput } from "@/components/EtcStandardColumns";
@@ -312,8 +312,16 @@ const SUBGROUP_EDGE = "border-l-8! border-l-[#808080]!";
 // height, so at the minimum the rows shrink right down to the gridlines instead
 // of bottoming out at the inputs' own py-1. Column width scales cell + input
 // horizontal padding.
+//
+// --etc-font-size (Text size stepper) drives the data-cell font on the same
+// class+element descendant-selector trick, so it beats each cell's hardcoded
+// text-[10px] with no `!`. The Text size stepper also bumps --etc-row-py /
+// --etc-col-px in step, so rows and columns grow to fit the larger text rather
+// than clipping it. Fallback 10px reproduces the current text-[10px] exactly.
+// Body data cells (td), their inputs, and inner spans scale; the sticky label
+// columns and section headers keep their fixed sizing.
 const ZOOM_CONTROLS =
-  "[&_td]:py-[var(--etc-row-py,4px)] [&_td]:leading-none [&_td_input]:py-[var(--etc-row-py,4px)] [&_td_input]:leading-none [&_td:not([class*='sticky'])]:px-[var(--etc-col-px,4px)] [&_th:not([class*='sticky'])]:px-[var(--etc-col-px,4px)] [&_td_input:not([class*='sticky'])]:px-[var(--etc-col-px,4px)]";
+  "[&_td]:py-[var(--etc-row-py,4px)] [&_td]:leading-none [&_td_input]:py-[var(--etc-row-py,4px)] [&_td_input]:leading-none [&_td:not([class*='sticky'])]:px-[var(--etc-col-px,4px)] [&_th:not([class*='sticky'])]:px-[var(--etc-col-px,4px)] [&_td_input:not([class*='sticky'])]:px-[var(--etc-col-px,4px)] [&_td:not([class*='sticky'])]:text-[length:var(--etc-font-size,10px)] [&_td_input]:text-[length:var(--etc-font-size,10px)] [&_td_span]:text-[length:var(--etc-font-size,10px)]";
 
 function currentMonth() {
   const d = new Date();
@@ -1084,7 +1092,13 @@ export default async function MonthlyEtcPage({
                         const draftCost = partsCostEntry.newEtcDraft != null ? Number(partsCostEntry.newEtcDraft) : null;
                         const effectiveNewEtcCost = effectiveNewEtc(partsCostEntry);
                         const diffCost = moneyLeft - effectiveNewEtcCost;
-                        const decidedCost = spent === 0 || draftCost != null;
+                        // Parallels the per-section-hours rule (see EtcSectionCells):
+                        // Parts Cost New ETC needs manager attention (yellow) only
+                        // when money was actually spent this month (spent > 0) and no
+                        // value has been decided yet. $0-spent, drafted, or already
+                        // submitted/historical cells stay neutral.
+                        const decidedCost =
+                          spent === 0 || draftCost != null || isHistoricalMonth || partsCostEntry.submittedAt != null;
 
                         partsCostGrandTotal.prior += prior;
                         partsCostGrandTotal.worked += spent;
@@ -1109,29 +1123,25 @@ export default async function MonthlyEtcPage({
                             >
                               {currency(moneyLeft)}
                             </td>
-                            <td className={`border-l border-sdc-border ${newEtcBg(decidedCost)} px-1 py-1 text-center`}>
-                              <EtcDraftInput
-                                entryId={partsCostEntry.id}
-                                name={`newEtcOverride__${partsCostEntry.id}`}
-                                defaultValue={
-                                  draftCost != null
-                                    ? String(draftCost)
-                                    : // Reopened month: seed with the confirmed value so a
-                                      // no-changes resubmit can't replace it with the suggestion.
-                                      isHistoricalMonth || partsCostEntry.submittedAt != null
-                                      ? String(round2(Number(partsCostEntry.newEtc)))
-                                      : // Don't auto-fill until the month's actuals are complete.
-                                        monthComplete && spent === 0
-                                        ? String(round2(suggestedCost))
-                                        : undefined
-                                }
-                                placeholder={!monthComplete || spent === 0 || draftCost != null ? undefined : currency(suggestedCost)}
-                                disabled={locked}
-                                ariaLabel={`New ETC cost override, ${job.jobName}, Parts Cost`}
-                                currency
-                                className="w-16 [appearance:textfield] rounded-md border-none bg-transparent px-1.5 py-1 text-center text-[10px] font-bold text-sdc-gray-600 outline-none placeholder:font-bold placeholder:text-sdc-gray-600 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none focus:bg-white focus:shadow-sm"
-                              />
-                            </td>
+                            <PartsCostNewEtcCell
+                              name={`newEtcOverride__${partsCostEntry.id}`}
+                              jobName={job.jobName}
+                              initialValue={
+                                draftCost != null
+                                  ? String(draftCost)
+                                  : // Reopened month: seed with the confirmed value so a
+                                    // no-changes resubmit can't replace it with the suggestion.
+                                    isHistoricalMonth || partsCostEntry.submittedAt != null
+                                    ? String(round2(Number(partsCostEntry.newEtc)))
+                                    : // Don't auto-fill until the month's actuals are complete.
+                                      monthComplete && spent === 0
+                                      ? String(round2(suggestedCost))
+                                      : ""
+                              }
+                              needsAttention={!decidedCost}
+                              placeholder={!monthComplete || spent === 0 || draftCost != null ? undefined : currency(suggestedCost)}
+                              locked={locked}
+                            />
                             <td
                               className={`border-l border-sdc-border ${diffBg(diffCost)} px-1 py-1 text-center text-[10px] text-sdc-gray-700`}
                               title={`${currencyExact(diffCost)} = Money Left (${currencyExact(moneyLeft)}) − New ETC (${currencyExact(effectiveNewEtcCost)})`}

@@ -172,6 +172,19 @@ export function PartsCostSection({ parts, estimatedToPurchase }: { parts: JobPar
                 );
               })}
             </tbody>
+            {/* Sticky footer: sums Total + Paid across the filtered rows (same
+                figures as the Purchased/Paid KPI cards). Stays pinned to the
+                bottom of the scroll region so it's visible while scrolling. */}
+            <tfoot className="sticky bottom-0 z-20">
+              <tr className="bg-sdc-navy font-semibold text-white">
+                <td className="sticky left-0 z-30 whitespace-nowrap bg-sdc-navy px-2 py-2 text-right" colSpan={10}>
+                  Total ({filtered.length.toLocaleString()} line items)
+                </td>
+                <td className="px-2 py-2 text-right">{usd(purchased)}</td>
+                <td className="px-2 py-2 text-right">{usd(paid)}</td>
+                <td className="px-2 py-2 text-right">{purchased ? Math.round((paid / purchased) * 100) : 0}%</td>
+              </tr>
+            </tfoot>
           </table>
         )}
       </div>
