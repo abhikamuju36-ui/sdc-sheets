@@ -62,8 +62,8 @@ export function IndicatorCard({
     const over = bullet.value > bullet.target;
     const fill = bullet.color ?? "#118dff";
     bulletEl = (
-      <div className="mt-3">
-        <div className="relative h-2 w-full overflow-hidden rounded-full bg-sdc-gray-100">
+      <div className="mt-2">
+        <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-sdc-gray-100">
           <div className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${Math.min(100, pct * 100)}%`, background: over ? RED : fill }} />
           {/* target tick at 100% */}
           <div className="absolute inset-y-[-2px] w-px bg-sdc-gray-400" style={{ left: "100%" }} />
@@ -77,16 +77,16 @@ export function IndicatorCard({
   }
 
   return (
-    <div className={card("p-5")}>
+    <div className={card("p-3.5")}>
       <div className="flex items-baseline justify-between gap-2">
         <p className="text-xs font-semibold text-sdc-gray-600">{label}</p>
         {deltaEl}
       </div>
-      <p className={`mt-3 font-heading text-[26px] font-bold leading-none tracking-tight tabular-nums ${tone === "green" ? "text-sdc-green-text" : "text-sdc-navy"}`}>
+      <p className={`mt-1.5 font-heading text-[22px] font-bold leading-none tracking-tight tabular-nums ${tone === "green" ? "text-sdc-green-text" : "text-sdc-navy"}`}>
         {value}
       </p>
       {bulletEl}
-      {hint && <p className="mt-2 text-[10px] text-sdc-gray-400">{hint}</p>}
+      {hint && <p className="mt-1.5 text-[10px] leading-tight text-sdc-gray-400">{hint}</p>}
     </div>
   );
 }
