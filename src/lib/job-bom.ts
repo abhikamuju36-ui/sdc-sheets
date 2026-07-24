@@ -153,7 +153,7 @@ export async function getJobBom(jobId: string): Promise<JobBom> {
         section = {
           key: `S${r.SpecID}`,
           depth: 1,
-          label: `TOP ${numericJob}-${r.SpecID} — Section ${r.SpecID}`,
+          label: `Section ${r.SpecID}`,
           isAssembly: true,
           partQty: 0,
           unitCost: 0,
