@@ -60,10 +60,20 @@ model Employee {
   billingGroup String? // e.g. Engineering / Shop
   // Team grouping, matching the SDC Scheduler app's team_members.discipline
   // categories: "Project Management" | "Mechanical Engineers" | "Controls
-  // Engineers" | "Builders" | "Electricians". Backfilled once from Scheduler
-  // by name match; managed here going forward.
+  // Engineers" | "Builders" | "Electricians". The Scheduler is the source of
+  // truth; the Employees page "Sync grouping from Scheduler" button mirrors it
+  // here by name match (see sync-scheduler-team.ts). Editable here as a manual
+  // override / for people not on the Scheduler roster.
   discipline   String?
   active       Boolean  @default(true)
+  // Reporting line, sourced from the Paylocity employee export (Supervisor [Id]),
+  // matched by Emp Id == paylocityId — a stable key, so no name matching. A
+  // self-relation: the supervisor is just another Employee. Nullable because
+  // top-of-chain people (and outsourced placeholders) have none. Editable on
+  // the Employees page as a manual override. See import-employee-supervisors.ts.
+  supervisorId Int?
+  supervisor   Employee?  @relation("EmployeeSupervisor", fields: [supervisorId], references: [id], onDelete: SetNull)
+  reports      Employee[] @relation("EmployeeSupervisor")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

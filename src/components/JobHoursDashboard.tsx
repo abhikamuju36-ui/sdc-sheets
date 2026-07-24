@@ -49,10 +49,6 @@ export function JobHoursDashboard({ data }: { data: DashData }) {
     [templateSections, activePhases],
   );
 
-  const totalPlanned = visible.reduce((sum, x) => sum + planned(x), 0);
-  const totalActual = visible.reduce((sum, x) => sum + x.actual, 0);
-  const totalDiff = totalPlanned - totalActual;
-
   const hierRows = visible.map((s) => ({ code: s.code, name: s.name, group: s.group, phase: s.phase, planned: planned(s), actual: s.actual }));
   const bgChart = data.billingGroups
     .filter((g) => g.quoted || g.etc || g.actual)
@@ -118,42 +114,6 @@ export function JobHoursDashboard({ data }: { data: DashData }) {
         </div>
       ) : (
       <>
-      {/* Per-section matrix: sections as ROWS — never scrolls horizontally. */}
-      <div className={`${card("p-0")} overflow-hidden`}>
-        <table className="w-full text-sm tabular-nums">
-          <thead>
-            <tr className="bg-sdc-navy text-left text-white">
-              <th className="px-3 py-2 font-medium">Section</th>
-              <th className="px-3 py-2 font-medium">Phase · Dept</th>
-              <th className="px-3 py-2 text-right font-medium">{plannedLabel}</th>
-              <th className="px-3 py-2 text-right font-medium">Actual</th>
-              <th className="px-3 py-2 text-right font-medium">Diff</th>
-            </tr>
-          </thead>
-          <tbody>
-            {visible.map((s) => {
-              const p = planned(s);
-              const diff = p - s.actual;
-              return (
-                <tr key={s.code} className="border-b border-sdc-border-soft/60 odd:bg-white even:bg-sdc-gray-50/60 hover:bg-sdc-blue-light/40">
-                  <td className="px-3 py-1.5 font-medium text-sdc-navy">{s.name}</td>
-                  <td className="px-3 py-1.5 text-xs text-sdc-gray-500">{s.phase} · {s.group}</td>
-                  <td className="px-3 py-1.5 text-right text-sdc-blue-dark">{fmt(p)}</td>
-                  <td className="px-3 py-1.5 text-right font-semibold">{fmt(s.actual)}</td>
-                  <td className={`px-3 py-1.5 text-right ${diff < 0 ? "text-red-600" : "text-sdc-gray-500"}`}>{fmt(diff)}</td>
-                </tr>
-              );
-            })}
-            <tr className="border-t-2 border-sdc-border bg-sdc-gray-100 font-bold text-sdc-navy">
-              <td className="px-3 py-2" colSpan={2}>Total</td>
-              <td className="px-3 py-2 text-right">{fmt(totalPlanned)}</td>
-              <td className="px-3 py-2 text-right">{fmt(totalActual)}</td>
-              <td className={`px-3 py-2 text-right ${totalDiff < 0 ? "text-red-600" : ""}`}>{fmt(totalDiff)}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
       {/* Charts */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[2fr_1fr]">
         <div className={`${card("p-4")} overflow-x-auto`}>
@@ -203,15 +163,18 @@ function SectionHierarchyChart({ rows, plannedLabel }: { rows: HierRow[]; planne
   const phaseRuns = groupRuns(rows, (r) => r.phase, (r) => r.phase);
   const colStyle = { gridTemplateColumns: `repeat(${rows.length}, minmax(60px, 1fr))` } as const;
 
+  // Hovered section index + cursor position, for the floating tooltip.
+  const [hover, setHover] = useState<{ row: HierRow; x: number; y: number } | null>(null);
+
   const Bar = ({ value, color }: { value: number; color: string }) => (
-    <div className="flex h-full flex-col items-center justify-end" title={fmt(value)}>
+    <div className="flex h-full flex-col items-center justify-end">
       <span className="mb-0.5 text-[8px] leading-none text-sdc-gray-500">{value ? fmt(value) : ""}</span>
       <div className="w-5 rounded-t-sm" style={{ height: `${(value / max) * 100}%`, background: color }} />
     </div>
   );
 
   return (
-    <div className="min-w-[640px]">
+    <div className="relative min-w-[640px]">
       <div className="mb-2 flex items-center gap-4 text-xs text-sdc-gray-600">
         <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: BLUE }} /> {plannedLabel}</span>
         <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: NAVY }} /> Actual</span>
@@ -219,12 +182,37 @@ function SectionHierarchyChart({ rows, plannedLabel }: { rows: HierRow[]; planne
       {/* Bars */}
       <div className="grid items-end gap-x-1" style={{ ...colStyle, height: BAR_H }}>
         {rows.map((r) => (
-          <div key={r.code} className="flex h-full items-end justify-center gap-1.5">
+          <div
+            key={r.code}
+            className="flex h-full items-end justify-center gap-1.5 rounded-sm hover:bg-sdc-blue-light/30"
+            onMouseMove={(e) => {
+              const box = e.currentTarget.parentElement!.getBoundingClientRect();
+              setHover({ row: r, x: e.clientX - box.left, y: e.clientY - box.top });
+            }}
+            onMouseLeave={() => setHover(null)}
+          >
             <Bar value={r.planned} color={BLUE} />
             <Bar value={r.actual} color={NAVY} />
           </div>
         ))}
       </div>
+      {hover && (() => {
+        const diff = hover.row.actual - hover.row.planned;
+        return (
+          <div
+            className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-md border border-sdc-border bg-white px-3 py-2 text-xs shadow-lg"
+            style={{ left: hover.x, top: hover.y - 12 }}
+          >
+            <div className="mb-1 font-semibold text-sdc-navy">{hover.row.name}</div>
+            <div className="text-[10px] text-sdc-gray-500">{hover.row.phase} · {hover.row.group}</div>
+            <div className="mt-1 flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-sm" style={{ background: BLUE }} /><span className="text-sdc-gray-600">{plannedLabel}:</span> <span className="font-medium tabular-nums">{fmt(hover.row.planned)}</span></div>
+            <div className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-sm" style={{ background: NAVY }} /><span className="text-sdc-gray-600">Actual:</span> <span className="font-medium tabular-nums">{fmt(hover.row.actual)}</span></div>
+            <div className={`mt-0.5 font-semibold tabular-nums ${diff > 0 ? "text-red-600" : diff < 0 ? "text-sdc-green-text" : "text-sdc-gray-400"}`}>
+              Diff: {diff > 0 ? "+" : ""}{fmt(diff)}
+            </div>
+          </div>
+        );
+      })()}
       {/* Tier 1 — section names + signed Actual−planned variance */}
       <div className="grid gap-x-1 border-t border-sdc-border pt-1" style={colStyle}>
         {rows.map((r) => {

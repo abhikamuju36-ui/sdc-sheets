@@ -318,44 +318,13 @@ export async function submitMonth(month: string, formData: FormData) {
   revalidatePath("/etc");
 }
 
-// Autosaves a typed-but-unsubmitted New ETC override so it survives Refresh
-// Data, navigation, and browser crashes — parity with the sheet, whose Refresh
-// script skipped non-empty New ETC cells. Revalidates /etc so the derived
-// server-rendered numbers (Total New ETC, Standard Fees) reflect the draft;
-// the grid cells themselves are client components with their own state, so
-// the re-render doesn't reset what the manager is typing.
-export async function saveNewEtcDraft(entryId: number, value: number | null): Promise<void> {
-  if (value !== null && (!Number.isFinite(value) || value < 0)) {
-    throw new Error(`Invalid New ETC draft value "${value}".`);
-  }
-
-  const entry = await prisma.etcEntry.findUnique({ where: { id: entryId }, select: { needsReview: true } });
-  if (!entry) throw new Error(`ETC entry ${entryId} not found.`);
-  if (!entry.needsReview) throw new Error(`Entry ${entryId} is already submitted — reopen the month to change it.`);
-
-  await prisma.etcEntry.update({
-    where: { id: entryId },
-    data: { newEtcDraft: value === null ? null : round2(value) },
-  });
-
-  revalidatePath("/etc");
-
-  await logAudit({
-    action: "etc.saveNewEtcDraft",
-    entityType: "EtcEntry",
-    entityId: entryId,
-    summary: `Draft New ETC ${value === null ? "cleared" : `set to ${round2(value)}`} on entry ${entryId}`,
-    metadata: { value },
-  });
-}
-
-// The toolbar's Save button for the hour-based department cells
-// (EtcSectionCells) — unlike Parts Cost's EtcDraftInput (which still
-// autosaves per-cell via saveNewEtcDraft on blur), typing in these cells
-// persists nothing on its own; everything currently typed across the whole
-// grid batch-saves in one shot only when this runs. The grid is all one
-// <form>, so every `newEtcOverride__<id>` field the manager has touched (or
-// left alone) already lives in `formData` — this just reads them back.
+// The toolbar's Save button — the single, password-gated commit path for every
+// New ETC cell in the grid (both the hour-based department cells in
+// EtcSectionCells and Parts Cost in PartsCostNewEtcCell). Typing in any of them
+// persists nothing on its own; everything currently typed across the whole grid
+// batch-saves in one shot only when this runs. The grid is all one <form>, so
+// every `newEtcOverride__<id>` field the manager has touched (or left alone)
+// already lives in `formData` — this just reads them back.
 //
 // Password-gated the first time each session (see etc-edit-gate.ts): if the
 // unlock cookie isn't already set, `newEtcSavePassword` must match, and a
