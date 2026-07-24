@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { card, INPUT } from "@/components/ui/classnames";
+import { card } from "@/components/ui/classnames";
 import type { JobPartsCost } from "@/lib/sync-totaleto";
 
 // Parts Cost section of the Job Hour Details dashboard — live per-part detail +
@@ -19,6 +19,10 @@ function usd2(n: number): string {
 }
 
 const COLS = ["Purchase", "Invoiced", "Manufacturer", "Supplier", "Category", "PO #", "Part #", "Description", "Qty", "Unit $", "Total", "Paid", "% Inv"];
+
+// Compact filter control — small enough that the whole slicer row fits on one
+// line. The dropdowns/search flex-shrink; the date inputs stay fixed.
+const CTRL = "h-8 rounded-md border border-sdc-border bg-white px-2 text-xs text-sdc-navy outline-none focus:border-sdc-blue";
 
 export function PartsCostSection({ parts, estimatedToPurchase }: { parts: JobPartsCost | null; estimatedToPurchase: number | null }) {
   const [category, setCategory] = useState("");
@@ -83,17 +87,17 @@ export function PartsCostSection({ parts, estimatedToPurchase }: { parts: JobPar
         <Kpi label="Left to Pay" value={usd(purchased - paid)} />
       </div>
 
-      {/* Slicers */}
-      <div className="flex flex-wrap items-center gap-2.5">
-        <select value={category} onChange={(e) => setCategory(e.target.value)} className={`${INPUT} w-auto min-w-40`} aria-label="Filter by category">
+      {/* Slicers — single compact row (no wrap); dropdowns/search shrink to fit. */}
+      <div className="flex flex-nowrap items-center gap-1.5">
+        <select value={category} onChange={(e) => setCategory(e.target.value)} className={`${CTRL} min-w-0 flex-1`} aria-label="Filter by category">
           <option value="">All categories</option>
           {categories.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
-        <select value={supplier} onChange={(e) => setSupplier(e.target.value)} className={`${INPUT} w-auto min-w-48`} aria-label="Filter by supplier">
+        <select value={supplier} onChange={(e) => setSupplier(e.target.value)} className={`${CTRL} min-w-0 flex-1`} aria-label="Filter by supplier">
           <option value="">All suppliers</option>
           {suppliers.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
-        <select value={manufacturer} onChange={(e) => setManufacturer(e.target.value)} className={`${INPUT} w-auto min-w-40`} aria-label="Filter by manufacturer">
+        <select value={manufacturer} onChange={(e) => setManufacturer(e.target.value)} className={`${CTRL} min-w-0 flex-1`} aria-label="Filter by manufacturer">
           <option value="">All manufacturers</option>
           {manufacturers.map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
@@ -101,8 +105,8 @@ export function PartsCostSection({ parts, estimatedToPurchase }: { parts: JobPar
           type="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search part #, description, PO…"
-          className={`${INPUT} w-56`}
+          placeholder="Search…"
+          className={`${CTRL} min-w-0 flex-1`}
           aria-label="Search parts"
         />
         {/* Date basis — single toggle button (Invoiced <-> Purchase) + range */}
@@ -110,22 +114,22 @@ export function PartsCostSection({ parts, estimatedToPurchase }: { parts: JobPar
           type="button"
           onClick={() => setDateBasis((b) => (b === "invoiced" ? "purchase" : "invoiced"))}
           title="Toggle whether the date range filters on Invoiced Date or Purchase Date"
-          className="flex items-center gap-1.5 rounded-md border border-sdc-blue bg-sdc-blue-light px-3 py-2 text-sm font-medium text-sdc-blue-dark hover:bg-sdc-blue-light/70"
+          className="flex h-8 shrink-0 items-center gap-1 rounded-md border border-sdc-blue bg-sdc-blue-light px-2 text-xs font-medium text-sdc-blue-dark hover:bg-sdc-blue-light/70"
         >
-          {dateBasis === "invoiced" ? "Invoiced Date" : "Purchase Date"}
-          <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="1.6">
+          {dateBasis === "invoiced" ? "Invoiced" : "Purchase"}
+          <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.6">
             <path d="M4 5.5 L2 7.5 L4 9.5 M2 7.5 H14 M12 10.5 L14 8.5 L12 6.5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
-        <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className={`${INPUT} w-auto`} aria-label={`${dateBasis} date from`} />
-        <span className="text-xs text-sdc-gray-400">to</span>
-        <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className={`${INPUT} w-auto`} aria-label={`${dateBasis} date to`} />
+        <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className={`${CTRL} shrink-0`} aria-label={`${dateBasis} date from`} />
+        <span className="shrink-0 text-xs text-sdc-gray-400">to</span>
+        <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className={`${CTRL} shrink-0`} aria-label={`${dateBasis} date to`} />
         {filterActive && (
-          <button type="button" onClick={clearAll} className="text-xs text-sdc-gray-400 hover:text-sdc-navy">
+          <button type="button" onClick={clearAll} className="shrink-0 text-xs text-sdc-gray-400 hover:text-sdc-navy">
             Clear
           </button>
         )}
-        <span className="ml-auto text-xs text-sdc-gray-400">{filtered.length.toLocaleString()} line items</span>
+        <span className="ml-auto shrink-0 whitespace-nowrap text-xs text-sdc-gray-400">{filtered.length.toLocaleString()} line items</span>
       </div>
 
       {/* Detail table — sticky header + first column, tall scroll region */}
