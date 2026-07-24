@@ -60,8 +60,10 @@ model Employee {
   billingGroup String? // e.g. Engineering / Shop
   // Team grouping, matching the SDC Scheduler app's team_members.discipline
   // categories: "Project Management" | "Mechanical Engineers" | "Controls
-  // Engineers" | "Builders" | "Electricians". Backfilled once from Scheduler
-  // by name match; managed here going forward.
+  // Engineers" | "Builders" | "Electricians". The Scheduler is the source of
+  // truth; the Employees page "Sync grouping from Scheduler" button mirrors it
+  // here by name match (see sync-scheduler-team.ts). Editable here as a manual
+  // override / for people not on the Scheduler roster.
   discipline   String?
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())

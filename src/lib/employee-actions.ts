@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { logAudit } from "@/lib/audit";
+import { syncSchedulerTeam, type TeamSyncResult } from "@/lib/sync-scheduler-team";
 
 // Employees are NEVER hard-deleted — departed people keep their historical
 // hours (Dan's requirement). Deactivate/reactivate only.
@@ -59,6 +60,15 @@ export async function updateEmployee(id: number, formData: FormData) {
     metadata: { before, after: data },
   });
   revalidatePath("/employees");
+}
+
+// Pulls the team grouping from the SDC Scheduler (its team_members table is the
+// source of truth for discipline) and mirrors it onto ETC employees by name.
+// Returns a full report so the UI can show what changed and what couldn't match.
+export async function syncSchedulerTeamAction(): Promise<TeamSyncResult> {
+  const result = await syncSchedulerTeam();
+  if (result.ok) revalidatePath("/employees");
+  return result;
 }
 
 // Soft-delete / restore. Historical ActualHours rows stay linked either way.

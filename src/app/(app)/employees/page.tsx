@@ -4,6 +4,7 @@ import { updateEmployee, setEmployeeActive } from "@/lib/employee-actions";
 import { PageTitle } from "@/components/ui/Typography";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BUTTON_SECONDARY, INPUT, TABLE_HEADER_ROW, TABLE_GRID } from "@/components/ui/classnames";
+import { SyncSchedulerTeamButton } from "@/components/SyncSchedulerTeamButton";
 
 // Team groupings, matching the SDC Scheduler app's team_members.discipline
 // categories exactly (pm/mech/controls/build/wire) so the two apps read the
@@ -87,6 +88,9 @@ export default async function EmployeesPage({
         >
           {showInactive ? "Hide inactive" : "Show inactive"}
         </a>
+        <div className="ml-auto">
+          <SyncSchedulerTeamButton />
+        </div>
       </div>
 
       {/* List — a real table (not the old ad-hoc CSS-grid rows), matching the
