@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { validJobTypeFilter, VALID_JOB_TYPES, compareJobIds, isSdcCustomer } from "@/lib/job-filters";
 import { SECTIONS, PHASE_GROUPS } from "@/lib/sections";
 import { PageTitle } from "@/components/ui/Typography";
-import { TABLE_HEADER_ROW, TABLE_GRID, BUTTON_PRIMARY, BUTTON_SECONDARY } from "@/components/ui/classnames";
+import { TABLE_HEADER_ROW, TABLE_GRID, BUTTON_PRIMARY } from "@/components/ui/classnames";
 import { PhaseColumnPicker } from "@/components/PhaseColumnPicker";
 import { ColumnToggle } from "@/components/ColumnToggle";
 import { GridZoomControls } from "@/components/GridZoomControls";
@@ -13,7 +13,6 @@ import { MultiSelectFilter } from "@/components/MultiSelectFilter";
 import { SortButton } from "@/components/SortButton";
 import { AddProjectButton } from "@/components/AddProjectButton";
 import { NewProjectRows } from "@/components/NewProjectRows";
-import { NewFromReleaseButton } from "@/components/NewFromReleaseButton";
 import { DateCell } from "@/components/DateCell";
 import { saveQuotedHours } from "@/lib/quoted-actions";
 
@@ -234,7 +233,6 @@ export default async function QuotedPage({
       <div className="mb-1 flex items-end justify-between gap-4">
         <PageTitle>Projects</PageTitle>
         <div className="flex items-center gap-2.5">
-          <NewFromReleaseButton className={BUTTON_SECONDARY} />
           <AddProjectButton className={BUTTON_PRIMARY} />
           <button type="submit" className={BUTTON_PRIMARY}>
             Save Quoted Hours
