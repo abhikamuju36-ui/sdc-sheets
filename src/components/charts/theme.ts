@@ -5,8 +5,8 @@ import type { EChartsOption } from "echarts";
 // direct value labels, which satisfies amber's low surface-contrast (secondary
 // encoding). Text always uses ink tokens, never the series color.
 export const SERIES = {
-  planned: "#118dff", // Quoted / ETC (planned basis)
-  actual: "#f59e0b", // Actual
+  planned: "#408bf7", // Quoted / ETC (planned basis)
+  actual: "#162398", // Actual
 } as const;
 
 const INK = "#12239e"; // sdc-navy — headings/values
