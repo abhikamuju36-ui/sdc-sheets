@@ -178,22 +178,32 @@ function SectionHierarchyChart({ rows, plannedLabel }: { rows: HierRow[]; planne
         <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: SERIES.planned }} /> {plannedLabel}</span>
         <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: SERIES.actual }} /> Actual</span>
       </div>
-      {/* Bars */}
+      {/* Bars — with the Quoted−Actual variance called out on top of each group
+          (green when Actual is under Quoted, red when over). */}
       <div className="grid items-end gap-x-1" style={{ ...colStyle, height: BAR_H }}>
-        {rows.map((r) => (
-          <div
-            key={r.code}
-            className="flex h-full items-end justify-center gap-1.5 rounded-sm hover:bg-sdc-blue-light/30"
-            onMouseMove={(e) => {
-              const box = e.currentTarget.parentElement!.getBoundingClientRect();
-              setHover({ row: r, x: e.clientX - box.left, y: e.clientY - box.top });
-            }}
-            onMouseLeave={() => setHover(null)}
-          >
-            <Bar value={r.planned} color={SERIES.planned} />
-            <Bar value={r.actual} color={SERIES.actual} />
-          </div>
-        ))}
+        {rows.map((r) => {
+          const diff = r.planned - r.actual; // Quoted − Actual: + = under Quoted (green), − = over (red)
+          const has = r.planned !== 0 || r.actual !== 0;
+          return (
+            <div
+              key={r.code}
+              className="flex h-full flex-col rounded-sm hover:bg-sdc-blue-light/30"
+              onMouseMove={(e) => {
+                const box = e.currentTarget.parentElement!.getBoundingClientRect();
+                setHover({ row: r, x: e.clientX - box.left, y: e.clientY - box.top });
+              }}
+              onMouseLeave={() => setHover(null)}
+            >
+              <div className={`h-4 text-center text-[11px] font-bold leading-none ${!has ? "text-transparent" : diff > 0 ? "text-sdc-green-text" : diff < 0 ? "text-red-600" : "text-sdc-gray-400"}`}>
+                {has ? `${diff > 0 ? "+" : ""}${fmt(diff)}` : ""}
+              </div>
+              <div className="flex flex-1 items-end justify-center gap-1.5">
+                <Bar value={r.planned} color={SERIES.planned} />
+                <Bar value={r.actual} color={SERIES.actual} />
+              </div>
+            </div>
+          );
+        })}
       </div>
       {hover && (() => {
         const diff = hover.row.actual - hover.row.planned;
@@ -212,22 +222,13 @@ function SectionHierarchyChart({ rows, plannedLabel }: { rows: HierRow[]; planne
           </div>
         );
       })()}
-      {/* Tier 1 — section names + signed Actual−planned variance */}
+      {/* Tier 1 — section names (variance is shown on top of the bars above) */}
       <div className="grid gap-x-1 border-t pt-1" style={{ ...colStyle, borderTopColor: TIER_DIVIDER }}>
-        {rows.map((r) => {
-          const diff = r.actual - r.planned; // + = over planned, − = under
-          const show = r.planned !== 0 || r.actual !== 0;
-          return (
-            <div key={r.code} className="px-0.5 text-center leading-tight">
-              <div className="text-[10px] text-sdc-navy">{r.name}</div>
-              {show && (
-                <div className={`text-[9px] font-semibold ${diff > 0 ? "text-red-600" : diff < 0 ? "text-sdc-green-text" : "text-sdc-gray-400"}`}>
-                  {diff > 0 ? "+" : ""}{fmt(diff)}
-                </div>
-              )}
-            </div>
-          );
-        })}
+        {rows.map((r) => (
+          <div key={r.code} className="px-0.5 text-center leading-tight">
+            <div className="text-[10px] text-sdc-navy">{r.name}</div>
+          </div>
+        ))}
       </div>
       {/* Tier 2 — department, spanning its sections */}
       <div className="mt-1 grid" style={colStyle}>
