@@ -46,6 +46,7 @@ export default function AuditLogGridInner({ rows }: { rows: AuditRow[] }) {
         rowData={rows}
         columnDefs={columnDefs}
         defaultColDef={{ sortable: true, filter: true, resizable: true, floatingFilter: true }}
+        suppressMenuHide
         pagination
         paginationPageSize={50}
         paginationPageSizeSelector={[25, 50, 100, 200]}
