@@ -25,6 +25,14 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${montserrat.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
+        {/* App-wide text size: restore the saved root font-size before paint so
+            there's no flash. Tailwind sizes are rem, so this scales the whole
+            UI proportionally. See AppTextSize. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{var s=localStorage.getItem('app-font-px');if(s){document.documentElement.style.fontSize=parseFloat(s)+'px';}}catch(e){}`,
+          }}
+        />
         <SessionProvider>{children}</SessionProvider>
       </body>
     </html>

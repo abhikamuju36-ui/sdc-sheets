@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useRef, useState, useSyncExternalStore } from "react";
 import { isEtcDirty } from "@/lib/etc-dirty-tracker";
+import { AppTextSize } from "@/components/AppTextSize";
 
 const COLLAPSE_KEY = "sdc-etc-planner-sidebar-collapsed";
 const WIDTH_KEY = "sdc-etc-planner-sidebar-width";
@@ -355,6 +356,8 @@ export default function Sidebar({
           </div>
         ))}
       </nav>
+
+      <AppTextSize collapsed={collapsed} />
 
       <button
         onClick={toggleCollapsed}

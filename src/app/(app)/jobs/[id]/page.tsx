@@ -152,7 +152,7 @@ export default async function JobDetailPage({
               {job.customer && <> · {job.customer}</>}
               {job.type && <> · {job.type}</>}
             </p>
-            <PageTitle className="text-xl">{job.jobName}</PageTitle>
+            <PageTitle>{job.jobName}</PageTitle>
           </div>
           <StatusBadge variant={job.status === "Complete" ? "complete" : "active"}>{job.status}</StatusBadge>
         </div>
