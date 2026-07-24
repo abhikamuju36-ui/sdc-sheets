@@ -5,6 +5,7 @@ import { PageTitle } from "@/components/ui/Typography";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { BUTTON_SECONDARY, INPUT, TABLE_HEADER_ROW, TABLE_GRID } from "@/components/ui/classnames";
 import { SyncSchedulerTeamButton } from "@/components/SyncSchedulerTeamButton";
+import { ImportSupervisorsButton } from "@/components/ImportSupervisorsButton";
 
 // Team groupings, matching the SDC Scheduler app's team_members.discipline
 // categories exactly (pm/mech/controls/build/wire) so the two apps read the
@@ -51,8 +52,17 @@ export default async function EmployeesPage({
     }))
     .filter((g) => g.employees.length > 0);
 
+  // Name lookup for supervisor display + the override dropdown. Uses the full
+  // active roster (not just the filtered view) so a supervisor filtered out by
+  // search still resolves. Sorted for a usable dropdown.
+  const allActive = await prisma.employee.findMany({
+    where: { active: true },
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
+
   const cellInput = `${INPUT} w-full px-2.5 py-1.5 text-[10px]`;
-  const HEADERS = ["#", "Name", "Discipline", "Department", "Status", "Actions"];
+  const HEADERS = ["#", "Name", "Discipline", "Supervisor", "Department", "Status", "Actions"];
   const COL_COUNT = HEADERS.length;
 
   return (
@@ -88,7 +98,8 @@ export default async function EmployeesPage({
         >
           {showInactive ? "Hide inactive" : "Show inactive"}
         </a>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          <ImportSupervisorsButton />
           <SyncSchedulerTeamButton />
         </div>
       </div>
@@ -139,6 +150,18 @@ export default async function EmployeesPage({
                                 {d}
                               </option>
                             ))}
+                          </select>
+                        </td>
+                        <td className="px-3 py-1.5">
+                          <select name="supervisorId" defaultValue={e.supervisorId ?? ""} form={`emp-${e.id}`} className={`${cellInput} text-center`} aria-label={`Supervisor, ${e.name}`}>
+                            <option value="">—</option>
+                            {allActive
+                              .filter((s) => s.id !== e.id)
+                              .map((s) => (
+                                <option key={s.id} value={s.id}>
+                                  {s.name}
+                                </option>
+                              ))}
                           </select>
                         </td>
                         <td className="px-3 py-1.5">

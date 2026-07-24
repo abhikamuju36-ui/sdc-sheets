@@ -66,6 +66,14 @@ model Employee {
   // override / for people not on the Scheduler roster.
   discipline   String?
   active       Boolean  @default(true)
+  // Reporting line, sourced from the Paylocity employee export (Supervisor [Id]),
+  // matched by Emp Id == paylocityId — a stable key, so no name matching. A
+  // self-relation: the supervisor is just another Employee. Nullable because
+  // top-of-chain people (and outsourced placeholders) have none. Editable on
+  // the Employees page as a manual override. See import-employee-supervisors.ts.
+  supervisorId Int?
+  supervisor   Employee?  @relation("EmployeeSupervisor", fields: [supervisorId], references: [id], onDelete: SetNull)
+  reports      Employee[] @relation("EmployeeSupervisor")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
