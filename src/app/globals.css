@@ -1,5 +1,21 @@
 @import "tailwindcss";
 
+/* Shared platform tokens (packages/design-system in the SDC Tools monorepo,
+   which this app always lives inside). Imported BEFORE the :root block below
+   on purpose: this app's own palette is declared later and therefore wins,
+   so the deliberately contrast-tested neutral ramp documented below is
+   untouched. What this adds is the ~100 structural tokens this app has no
+   equivalent for - spacing, control heights, radius, elevation, type scale,
+   z-index ladder and the shared focus ring - plus the accessibility baseline
+   (visible :focus-visible ring, prefers-reduced-motion).
+
+   The six colour names that do collide (--sdc-blue, --sdc-navy, --sdc-green,
+   --sdc-lime, --sdc-yellow, --sdc-blue-light) all resolve to this file's own
+   values. Five are byte-identical anyway; --sdc-blue-light differs (this app
+   uses it for a pale tint and keeps the brand Light Blue as --sdc-blue-100),
+   and this app's value wins, so nothing changes visually. */
+@import "../../../packages/design-system/tokens.css";
+
 /*
  * SDC 2026 Brand Guide palette (verified page-by-page against
  * SDC_Brand_Guide_2026.pdf, section 04 "Color Palette"):
